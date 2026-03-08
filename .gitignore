@@ -37,6 +37,7 @@ htmlcov/
 # local scratch artifacts
 scraps/
 benchmark/results/
+plots/
 uv.lock
 tools/
 reasoning_trajectories_*.txt

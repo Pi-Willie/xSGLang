@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import glob
 import json
 import os
 import re
@@ -35,6 +36,13 @@ _QUANTIZED_SUFFIXES = (
     "-8bit",
     "-unsloth",
 )
+_MODEL_PREFETCH_ALLOW_PATTERNS = (
+    "*.json",
+    "*.safetensors",
+    "*.model",
+    "*.tiktoken",
+    "*.txt",
+)
 
 
 class DisabledTqdm(tqdm):
@@ -56,10 +64,38 @@ class LocalModelCandidate:
     config: dict[str, Any]
 
 
+def _hf_snapshot_download(path: str, *, allow_patterns: Iterable[str] | None = None) -> str:
+    # If hf_transfer is installed, the hub client can use its faster transfer path.
+    # We enable it opportunistically instead of making it mandatory.
+    if os.environ.get("HF_HUB_ENABLE_HF_TRANSFER") != "1":
+        try:
+            import hf_transfer  # noqa: F401
+        except Exception:
+            pass
+        else:
+            os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+    kwargs: dict[str, Any] = {
+        "tqdm_class": DisabledTqdm,
+        "max_workers": max(8, min(32, os.cpu_count() or 8)),
+    }
+    if allow_patterns is not None:
+        kwargs["allow_patterns"] = list(allow_patterns)
+    return snapshot_download(path, **kwargs)
+
+
 def _repo_name(path: str) -> str:
     if os.path.isdir(path):
         return os.path.basename(os.path.abspath(path))
     return path.rsplit("/", 1)[-1]
+
+
+def _path_has_required_files(path: str, required_patterns: Iterable[str] | None) -> bool:
+    if not os.path.isdir(path):
+        return False
+    if required_patterns is None:
+        return True
+    return all(glob.glob(os.path.join(path, pattern)) for pattern in required_patterns)
 
 
 def _normalize_name(name: str) -> str:
@@ -85,11 +121,7 @@ def _resolve_metadata_dir(path: str, *, allow_patterns: Iterable[str]) -> str | 
     if local_snapshot is not None:
         return local_snapshot
     try:
-        return snapshot_download(
-            path,
-            allow_patterns=list(allow_patterns),
-            tqdm_class=DisabledTqdm,
-        )
+        return _hf_snapshot_download(path, allow_patterns=allow_patterns)
     except Exception:
         return None
 
@@ -153,13 +185,17 @@ def _candidate_score(source_path: str, candidate: LocalModelCandidate) -> float:
     return score
 
 
-def _resolve_local_cached_repo_snapshot(path: str) -> str | None:
+def _resolve_local_cached_repo_snapshot(
+    path: str, *, required_patterns: Iterable[str] | None = None
+) -> str | None:
     normalized_path = path.strip()
     if not normalized_path or os.path.isdir(normalized_path):
         return None
 
     for candidate in _iter_local_model_candidates():
-        if candidate.repo_id == normalized_path:
+        if candidate.repo_id == normalized_path and _path_has_required_files(
+            candidate.path, required_patterns
+        ):
             return candidate.path
     return None
 
@@ -360,17 +396,36 @@ def cached_load_hf_config(model_path: str) -> PretrainedConfig:
 
 def download_hf_weight(model_path: str) -> str:
     if os.path.isdir(model_path):
+        if not _path_has_required_files(model_path, ["*.safetensors"]):
+            raise ValueError(
+                f"Local model path '{model_path}' does not contain any .safetensors weight files."
+            )
         return model_path
-    local_snapshot = _resolve_local_cached_repo_snapshot(model_path)
+    local_snapshot = _resolve_local_cached_repo_snapshot(
+        model_path,
+        required_patterns=["*.safetensors"],
+    )
     if local_snapshot is not None:
         return local_snapshot
     try:
-        return snapshot_download(
-            model_path,
-            allow_patterns=["*.safetensors"],
-            tqdm_class=DisabledTqdm,
-        )
+        return _hf_snapshot_download(model_path, allow_patterns=["*.safetensors"])
     except Exception as e:
         raise ValueError(
             f"Model path '{model_path}' is neither a local directory nor a valid model ID: {e}"
         )
+
+
+def ensure_local_model_path(model_path: str) -> str:
+    if os.path.isdir(model_path):
+        if not _path_has_required_files(model_path, ["*.safetensors"]):
+            raise ValueError(
+                f"Local model path '{model_path}' does not contain any .safetensors weight files."
+            )
+        return model_path
+    local_snapshot = _resolve_local_cached_repo_snapshot(
+        model_path,
+        required_patterns=["*.safetensors"],
+    )
+    if local_snapshot is not None:
+        return local_snapshot
+    return _hf_snapshot_download(model_path, allow_patterns=_MODEL_PREFETCH_ALLOW_PATTERNS)

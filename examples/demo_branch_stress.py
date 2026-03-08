@@ -10,6 +10,7 @@ import torch
 
 from minisgl.core import BlockSpec, ChildContinuationSpec, SamplingParams
 from minisgl.llm import LLM
+from minisgl.utils import ensure_local_model_path
 
 
 PROMPT = (
@@ -123,7 +124,11 @@ def main() -> None:
         _print_capacity_error(args)
         return
     print("Loading model and preparing the engine...", flush=True)
-    llm = LLM(model_path=args.model, cuda_graph_max_bs=0, max_running_req=args.max_running_req)
+    print("Checking the local model cache...", flush=True)
+    local_model_path = ensure_local_model_path(args.model)
+    if local_model_path != args.model:
+        print(f"  using local snapshot: {local_model_path}", flush=True)
+    llm = LLM(model_path=local_model_path, cuda_graph_max_bs=0, max_running_req=args.max_running_req)
     root = llm.open_continuation(
         PROMPT,
         SamplingParams(

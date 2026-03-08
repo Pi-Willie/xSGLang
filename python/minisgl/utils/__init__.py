@@ -36,6 +36,12 @@ def download_hf_weight(*args, **kwargs):
     return _impl(*args, **kwargs)
 
 
+def ensure_local_model_path(*args, **kwargs):
+    from .hf import ensure_local_model_path as _impl
+
+    return _impl(*args, **kwargs)
+
+
 def load_tokenizer(*args, **kwargs):
     from .hf import load_tokenizer as _impl
 
@@ -51,6 +57,7 @@ def resolve_model_paths(*args, **kwargs):
 __all__ = [
     "cached_load_hf_config",
     "download_hf_weight",
+    "ensure_local_model_path",
     "load_tokenizer",
     "resolve_model_paths",
     "init_logger",

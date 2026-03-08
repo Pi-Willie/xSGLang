@@ -6,6 +6,8 @@ apache-tvm-ffi>=0.1.4
 fastapi
 flashinfer-python>=0.5.3
 huggingface_hub
+hf_transfer
+matplotlib
 modelscope
 msgpack
 openai
