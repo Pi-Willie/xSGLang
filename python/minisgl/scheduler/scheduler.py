@@ -106,11 +106,19 @@ class Scheduler(SchedulerIOMixin):
         # initialize other managers
         self.table_manager = TableManager(config.max_running_req, self.engine.page_table)
         self.cache_manager = CacheManager(
-            self.engine.num_pages, config.page_size, self.engine.page_table, config.cache_type
+            self.engine.num_pages,
+            config.page_size,
+            self.engine.page_table,
+            config.cache_type,
+            model_config=config.model_config,
+            state_cache=self.engine.state_cache,
         )
         self.decode_manager = DecodeManager(config.page_size)
         self.prefill_manager = PrefillManager(
-            self.cache_manager, self.table_manager, self.decode_manager
+            self.cache_manager,
+            self.table_manager,
+            self.decode_manager,
+            state_cache=self.engine.state_cache,
         )
 
         # some alias for easy access
@@ -136,6 +144,13 @@ class Scheduler(SchedulerIOMixin):
         )
         self._input_mapping_buffer = PinnedRingBuffer(
             self.device, torch.int64, slots=2, min_capacity=256
+        )
+        self._req_table_buffer = PinnedRingBuffer(self.device, torch.int64, slots=2, min_capacity=256)
+        self._req_table_i32_buffer = PinnedRingBuffer(
+            self.device, torch.int32, slots=2, min_capacity=256
+        )
+        self._req_cu_seqlens_buffer = PinnedRingBuffer(
+            self.device, torch.int32, slots=2, min_capacity=256
         )
         self._write_mapping_buffer = PinnedRingBuffer(
             self.device, torch.int64, slots=2, min_capacity=256
@@ -516,6 +531,7 @@ class Scheduler(SchedulerIOMixin):
             reserved_size=self.decode_manager.inflight_tokens,
             cache_manager=self.cache_manager,
             table_manager=self.table_manager,
+            state_cache=self.engine.state_cache,
         )
         req = adder.try_add_one(pending)
         if req is None:
@@ -1073,6 +1089,8 @@ class Scheduler(SchedulerIOMixin):
             self.engine.page_table[table_idx, :map_limit].copy_(
                 self.engine.page_table[state.table_idx, :map_limit]
             )
+        if self.engine.state_cache is not None:
+            self.engine.state_cache.copy_row(state.table_idx, table_idx)
 
         metadata = {
             "created_at": time.time(),
@@ -1201,6 +1219,8 @@ class Scheduler(SchedulerIOMixin):
             self.engine.page_table[state.table_idx, :map_limit].copy_(
                 self.engine.page_table[snapshot.table_idx, :map_limit]
             )
+        if self.engine.state_cache is not None:
+            self.engine.state_cache.copy_row(snapshot.table_idx, state.table_idx)
         self.cache_manager.track_clone_page_starts(new_pages)
         if state.can_decode:
             self.decode_manager.running_reqs.add(state)
@@ -1245,7 +1265,7 @@ class Scheduler(SchedulerIOMixin):
 
         new_page_start = int(self.cache_manager._allocate(1).item())
         page_size = self.cache_manager.page_size
-        for layer_id in range(self.engine.kv_cache.num_layers):
+        for layer_id in self.engine.kv_cache.iter_layer_ids():
             k_cache = self.engine.kv_cache.k_cache(layer_id)
             v_cache = self.engine.kv_cache.v_cache(layer_id)
             k_flat = k_cache.view((-1,) + tuple(k_cache.shape[2:]))
@@ -1474,6 +1494,8 @@ class Scheduler(SchedulerIOMixin):
     def _free_req_resources(self, req: Req) -> None:
         self.cache_manager.release_state_tracking(req)
         self._unregister_state(req)
+        if self.engine.state_cache is not None:
+            self.engine.state_cache.reset_row(req.table_idx)
         self.table_manager.free(req.table_idx)
         self.cache_manager.cache_req(req, finished=True)
 
@@ -1492,10 +1514,18 @@ class Scheduler(SchedulerIOMixin):
             # Freshly allocated pages are unique, so once the current writable span
             # has been remapped we do not need to keep checking COW on later decode steps.
             req.cow_active = False
+        if self.engine.state_cache is not None and hasattr(self.engine.state_cache, "begin_batch_tracking"):
+            self.engine.state_cache.begin_batch_tracking(batch)
         batch.positions, position_indices = _make_positions(
             batch,
             positions_buffer=self._positions_buffer,
             index_buffer=self._positions_index_buffer,
+        )
+        batch.req_table_indices, batch.req_table_indices_i32, batch.req_cu_seqlens = _make_req_layout(
+            batch,
+            table_buffer=self._req_table_buffer,
+            table_i32_buffer=self._req_table_i32_buffer,
+            cu_seqlens_buffer=self._req_cu_seqlens_buffer,
         )
         input_mapping = _make_input_tuple(
             batch,
@@ -1583,6 +1613,31 @@ def _make_input_tuple(
     if needed_size > 0:
         mapping.copy_(mapping_host, non_blocking=True)
     return mapping, positions
+
+
+def _make_req_layout(
+    batch: Batch,
+    *,
+    table_buffer: PinnedRingBuffer,
+    table_i32_buffer: PinnedRingBuffer,
+    cu_seqlens_buffer: PinnedRingBuffer,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    num_reqs = len(batch.reqs)
+    table_host, table_indices = table_buffer.acquire(num_reqs)
+    table_i32_host, table_indices_i32 = table_i32_buffer.acquire(num_reqs)
+    cu_host, cu_seqlens = cu_seqlens_buffer.acquire(num_reqs + 1)
+    cu_host[0] = 0
+    offset = 0
+    for idx, req in enumerate(batch.reqs):
+        table_host[idx] = req.table_idx
+        table_i32_host[idx] = req.table_idx
+        offset += req.extend_len
+        cu_host[idx + 1] = offset
+    if num_reqs > 0:
+        table_indices.copy_(table_host, non_blocking=True)
+        table_indices_i32.copy_(table_i32_host, non_blocking=True)
+    cu_seqlens.copy_(cu_host, non_blocking=True)
+    return table_indices, table_indices_i32, cu_seqlens
 
 
 def _make_write_tuple(

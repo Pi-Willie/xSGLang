@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 if TYPE_CHECKING:
     from transformers import PretrainedConfig
@@ -40,10 +40,35 @@ class ModelConfig:
     attention_bias: bool = False
     attention_dropout: float = 0.0
     sliding_window: int | None = None
+    layer_types: Tuple[str, ...] = ()
+    linear_num_key_heads: int = 0
+    linear_num_value_heads: int = 0
+    linear_key_head_dim: int = 0
+    linear_value_head_dim: int = 0
+    linear_conv_kernel_dim: int = 0
+    rotary_partial_factor: float = 1.0
 
     @property
     def is_moe(self) -> bool:
         return self.num_experts > 0 or "moe" in self.model_type
+
+    @property
+    def has_linear_attention(self) -> bool:
+        return any(layer_type == "linear_attention" for layer_type in self.layer_types)
+
+    @property
+    def full_attention_layer_ids(self) -> Tuple[int, ...]:
+        if len(self.layer_types) == 0:
+            return tuple(range(self.num_layers))
+        return tuple(
+            layer_idx
+            for layer_idx, layer_type in enumerate(self.layer_types)
+            if layer_type == "full_attention"
+        )
+
+    @property
+    def num_kv_cache_layers(self) -> int:
+        return len(self.full_attention_layer_ids) or self.num_layers
 
     @staticmethod
     def _normalize_hidden_act(config: PretrainedConfig) -> str:
@@ -63,6 +88,8 @@ class ModelConfig:
             "qwen2": "Qwen2ForCausalLM",
             "qwen3": "Qwen3ForCausalLM",
             "qwen3_moe": "Qwen3MoeForCausalLM",
+            "qwen3_5_text": "Qwen3_5ForCausalLM",
+            "qwen3_5_moe_text": "Qwen3_5MoeForCausalLM",
             "mistral": "MistralForCausalLM",
             "ministral": "MinistralForCausalLM",
             "gemma": "GemmaForCausalLM",
@@ -84,6 +111,9 @@ class ModelConfig:
         rope_scaling = getattr(config, "rope_scaling", None)
         if rope_scaling is None:
             rope_scaling = getattr(config, "rope_parameters", None)
+        rope_parameters = dict(rope_scaling) if isinstance(rope_scaling, dict) else {}
+        layer_types = tuple(str(layer) for layer in getattr(config, "layer_types", ()) or ())
+        rope_base = float(rope_parameters.get("rope_theta", getattr(config, "rope_theta", 10000.0)))
 
         return cls(
             num_layers=int(config.num_hidden_layers),
@@ -100,7 +130,7 @@ class ModelConfig:
                 head_dim=head_dim,
                 rotary_dim=head_dim,
                 max_position=int(getattr(config, "max_position_embeddings", 8192)),
-                base=float(getattr(config, "rope_theta", 10000.0)),
+                base=rope_base,
                 scaling=rope_scaling,
             ),
             num_experts=num_experts,
@@ -112,4 +142,16 @@ class ModelConfig:
             attention_bias=bool(getattr(config, "attention_bias", False)),
             attention_dropout=float(getattr(config, "attention_dropout", 0.0)),
             sliding_window=getattr(config, "sliding_window", None),
+            layer_types=layer_types,
+            linear_num_key_heads=int(getattr(config, "linear_num_key_heads", 0)),
+            linear_num_value_heads=int(getattr(config, "linear_num_value_heads", 0)),
+            linear_key_head_dim=int(getattr(config, "linear_key_head_dim", 0)),
+            linear_value_head_dim=int(getattr(config, "linear_value_head_dim", 0)),
+            linear_conv_kernel_dim=int(getattr(config, "linear_conv_kernel_dim", 0)),
+            rotary_partial_factor=float(
+                rope_parameters.get(
+                    "partial_rotary_factor",
+                    getattr(config, "partial_rotary_factor", 1.0),
+                )
+            ),
         )

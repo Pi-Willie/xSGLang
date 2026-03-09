@@ -67,6 +67,19 @@ _DECODER_SPECS = (
         notes="Qwen3 MoE stack with routed MLP blocks.",
     ),
     DecoderArchitectureSpec(
+        key="qwen3_5",
+        supported_hf_architectures=("Qwen3_5ForCausalLM",),
+        supported_model_types=("qwen3_5_text",),
+        attention_bias=False,
+        qk_norm=True,
+        mlp_variant="dense",
+        experimental=True,
+        notes=(
+            "Qwen 3.5 hybrid stack with gated full-attention blocks and linear-attention "
+            "recurrent state."
+        ),
+    ),
+    DecoderArchitectureSpec(
         key="mistral",
         supported_hf_architectures=("MistralForCausalLM",),
         supported_model_types=("mistral",),

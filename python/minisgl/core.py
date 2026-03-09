@@ -725,6 +725,8 @@ class KVView:
         cache = self._kvcache()
         if layer < 0 or layer >= cache.num_layers:
             raise ValueError(f"Layer index out of range: {layer}")
+        if not cache.has_layer(layer):
+            raise ValueError(f"Layer {layer} does not expose paged KV cache")
         k_cache = cache.k_cache(layer)
         v_cache = cache.v_cache(layer)
         k_flat = k_cache.view((-1,) + tuple(k_cache.shape[2:]))
@@ -784,7 +786,7 @@ class KVView:
 
     def read_all_layers(self, position: int) -> Dict[int, Tuple[torch.Tensor, torch.Tensor]]:
         values: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
-        for layer_idx in range(self._kvcache().num_layers):
+        for layer_idx in self._kvcache().iter_layer_ids():
             values[layer_idx] = self.read(layer_idx, position)
         return values
 
@@ -943,6 +945,9 @@ class Batch:
     # these fields should be set by scheduler
     input_ids: torch.Tensor = field(init=False)
     positions: torch.Tensor = field(init=False)
+    req_table_indices: torch.Tensor = field(init=False)
+    req_table_indices_i32: torch.Tensor = field(init=False)
+    req_cu_seqlens: torch.Tensor = field(init=False)
     out_loc: torch.Tensor = field(init=False)
     padded_reqs: List[Req] = field(init=False)
     # this field should be set by attention backend
@@ -1044,6 +1049,7 @@ class Context:
     attn_backend: BaseAttnBackend = field(init=False)
     moe_backend: BaseMoeBackend = field(init=False)
     kv_cache: BaseKVCachePool = field(init=False)
+    state_cache: Any | None = field(default=None, init=False)
     _batch: Batch | None = field(default=None, init=False)
 
     @property

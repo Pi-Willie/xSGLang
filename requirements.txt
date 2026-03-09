@@ -11,11 +11,12 @@ matplotlib
 modelscope
 msgpack
 openai
+peft
 prompt_toolkit
 pyzmq
 quack-kernels
 safetensors
 sgl_kernel>=0.3.17.post1
 torch<2.10.0
-transformers>=4.56.0,<=4.57.3
+transformers>=4.56.0
 uvicorn

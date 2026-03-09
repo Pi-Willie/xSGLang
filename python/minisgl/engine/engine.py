@@ -10,7 +10,7 @@ from typing import Any, Dict, Tuple
 import torch
 from minisgl.attention import create_attention_backend
 from minisgl.core import Batch, Context, Req, clear_global_ctx, set_global_ctx
-from minisgl.distributed import destroy_distributed, enable_pynccl_distributed, set_tp_info
+from minisgl.distributed import destroy_distributed, enable_pynccl_distributed, reset_tp_info, set_tp_info
 from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight
@@ -89,6 +89,11 @@ class Engine:
             hidden_dtype=config.dtype,
             search_paths=tuple(output_search_paths),
             device=self.device,
+        )
+        self.ctx.state_cache = self.state_cache = self.model.create_state_cache(
+            num_tables=config.max_running_req + 1,
+            device=self.device,
+            dtype=self.dtype,
         )
         self.lora_manager = LoRAManager(
             model=self.model,
@@ -204,7 +209,7 @@ class Engine:
             * div_even(config.model_config.num_kv_heads, config.tp_info.size)
             * config.page_size
             * self.dtype.itemsize
-            * config.model_config.num_layers
+            * config.model_config.num_kv_cache_layers
         )
         num_pages = config.num_page_override
         if num_pages is None:
@@ -329,6 +334,8 @@ class Engine:
         clear_global_ctx(self.ctx)
         torch.distributed.destroy_process_group()
         destroy_distributed()
+        reset_tp_info()
+        torch.cuda.empty_cache()
 
 
 def _align_up_32(num: int) -> int:

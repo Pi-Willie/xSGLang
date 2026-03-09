@@ -9,20 +9,37 @@ from minisgl.kvcache import BaseCacheHandle, MatchResult, create_prefix_cache
 from minisgl.utils import PinnedRingBuffer, div_ceil
 
 if TYPE_CHECKING:
+    from minisgl.models import ModelConfig
+
     from .utils import PendingReq
 
 
 class CacheManager:
-    def __init__(self, num_pages: int, page_size: int, page_table: torch.Tensor, type: str):
+    def __init__(
+        self,
+        num_pages: int,
+        page_size: int,
+        page_table: torch.Tensor,
+        type: str,
+        *,
+        model_config: "ModelConfig | None" = None,
+        state_cache=None,
+    ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
         device = page_table.device
         self.free_slots = torch.arange(num_pages, dtype=torch.int32, device=device) * page_size
-        self.prefix_cache = create_prefix_cache(device=device, type=type)
+        self.prefix_cache = create_prefix_cache(
+            device=device,
+            type=type,
+            model_config=model_config,
+            state_cache=state_cache,
+        )
         self.device = device
         self.num_pages = num_pages
         self.page_table = page_table
         self.page_size = page_size
+        self.state_cache = state_cache
         self._table_idx_buffer = PinnedRingBuffer(device, torch.int64)
         self._position_buffer = PinnedRingBuffer(device, torch.int64)
         # Per-page ref counts for fork/snapshot tracked states.
@@ -82,14 +99,35 @@ class CacheManager:
         insert_ids = req.materialize_input_ids()[: req.cached_len]
         page_indices = self.page_table[req.table_idx, : req.cached_len]
         old_handle = req.cache_handle
+        if hasattr(self.prefix_cache, "insert_tracked_prefix") and self.state_cache is not None:
+            insert_len = int(self.prefix_cache.align_cached_len(req.cached_len))
+            tracked_slots = self.state_cache.consume_tracked_prefixes(req.table_idx, upto=insert_len)
+            if insert_len > old_handle.cached_len and tracked_slots:
+                cached_len, new_handle = self.prefix_cache.insert_tracked_prefix(
+                    insert_ids[:insert_len],
+                    page_indices[:insert_len],
+                    tracked_slots,
+                )
+                self.unlock(old_handle)
+                self._free(page_indices[old_handle.cached_len : cached_len])
+                if finished:
+                    self._free(page_indices[new_handle.cached_len :])
+                else:
+                    req.cache_handle = new_handle
+                    self.lock(new_handle)
+            else:
+                self.state_cache.discard_tracked_prefixes(req.table_idx)
+                if finished:
+                    self.unlock(old_handle)
+                    self._free(page_indices[old_handle.cached_len :])
+            return
+
         cached_len, new_handle = self.prefix_cache.insert_prefix(insert_ids, page_indices)
-        # unlock until all operations on handle is done
         self.unlock(old_handle)
-        # this part is already in the prefix cache, free it
         self._free(page_indices[old_handle.cached_len : cached_len])
-        if finished:  # this tail part should be freed
+        if finished:
             self._free(page_indices[new_handle.cached_len :])
-        else:  # keep the tail part, update the handle
+        else:
             req.cache_handle = new_handle
             self.lock(new_handle)
 

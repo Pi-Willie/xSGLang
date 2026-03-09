@@ -117,6 +117,8 @@ class GraphRunner:
         sample_output_specs: Tuple[SampleOutputSpec, ...],
         dummy_req: Req,
     ) -> None:
+        if not getattr(model, "supports_cuda_graph", True):
+            cuda_graph_bs = []
         cuda_graph_bs = _determine_cuda_graph_bs(
             cuda_graph_bs=cuda_graph_bs,
             cuda_graph_max_bs=cuda_graph_max_bs,

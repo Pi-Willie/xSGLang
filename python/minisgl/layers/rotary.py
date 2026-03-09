@@ -61,6 +61,8 @@ def _get_rope(
 ) -> RotaryEmbedding:
     if rope_scaling is None:
         return RotaryEmbedding(head_dim, rotary_dim, max_position, base)
+    if rope_scaling.get("rope_type", "default") == "default":
+        return RotaryEmbedding(head_dim, rotary_dim, max_position, base)
     # need to test some cases:
     match rope_scaling["rope_type"]:
         case "llama3":

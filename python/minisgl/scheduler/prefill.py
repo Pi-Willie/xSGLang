@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING, Any, List, Tuple
 
 import torch
 from minisgl.core import Batch, Req
@@ -35,6 +35,7 @@ class PrefillAdder:
     reserved_size: int
     cache_manager: CacheManager
     table_manager: TableManager
+    state_cache: Any | None = None
 
     def _try_allocate_one(self, req: PendingReq) -> Tuple[BaseCacheHandle, int] | None:
         if self.table_manager.available_size == 0:
@@ -54,11 +55,16 @@ class PrefillAdder:
             return self.cache_manager.unlock(handle)
 
         table_idx = self.table_manager.allocate()
+        if self.state_cache is not None:
+            self.state_cache.reset_row(table_idx)
         if cached_len > 0:  # NOTE: set the cached part
             device_ids = self.table_manager.token_pool[table_idx][:cached_len]
             page_entry = self.table_manager.page_table[table_idx][:cached_len]
             device_ids.copy_(stage_cpu_tensor(req.input_ids[:cached_len]), non_blocking=True)
             page_entry.copy_(handle.get_matched_indices())
+            snapshot_slot = getattr(handle, "snapshot_slot", None)
+            if snapshot_slot is not None and self.state_cache is not None:
+                self.state_cache.restore_snapshot(snapshot_slot, table_idx)
 
         return handle, table_idx
 
@@ -125,6 +131,7 @@ class PrefillManager:
     cache_manager: CacheManager
     table_manager: TableManager
     decode_manager: DecodeManager
+    state_cache: Any | None = None
     pending_list: List[PendingReq] = field(default_factory=list)
 
     def add_one_req(self, req: UserMsg) -> None:
@@ -153,6 +160,7 @@ class PrefillManager:
             reserved_size=self.decode_manager.inflight_tokens,
             cache_manager=self.cache_manager,
             table_manager=self.table_manager,
+            state_cache=self.state_cache,
         )
         reqs: List[Req] = []
         chunked_list: List[PendingReq] = []

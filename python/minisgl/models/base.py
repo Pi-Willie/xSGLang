@@ -23,9 +23,20 @@ class BaseLLMModel(ABC, BaseOP):
 
     def __init__(self) -> None:
         self._output_manager: AttachedOutputManager | None = None
+        self.supports_cuda_graph = True
 
     def forward_with_hooks(self) -> ModelForwardOutput:
         return self.forward()
+
+    def create_state_cache(
+        self,
+        *,
+        num_tables: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ):
+        _ = num_tables, device, dtype
+        return None
 
     @property
     def num_layers(self) -> int:

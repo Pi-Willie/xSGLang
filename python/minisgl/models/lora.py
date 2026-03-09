@@ -317,25 +317,41 @@ class LoRAManager:
         q_local = div_even(cfg.num_qo_heads, tp.size) * cfg.head_dim
         kv_local = div_even(cfg.num_kv_heads, tp.size) * cfg.head_dim
         mlp_local = div_even(cfg.intermediate_size, tp.size)
+        is_qwen3_5 = cfg.model_type == "qwen3_5_text"
+        q_proj_local = q_local * 2 if is_qwen3_5 else q_local
 
         if suffix == "self_attn.q_proj":
-            target = self._params[f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"][:q_local]
-            start = tp.rank * q_local
+            if is_qwen3_5:
+                full_key = f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"
+                target = self._params[full_key][:q_proj_local]
+            else:
+                target = self._params[f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"][:q_local]
+            start = tp.rank * q_proj_local
             a = _to_target(a_cpu, target)
-            b = _to_target(b_cpu[start : start + q_local], target)
+            b = _to_target(b_cpu[start : start + target.shape[0]], target)
             target.add_(b @ a, alpha=scale)
             return
         if suffix == "self_attn.k_proj":
-            full_key = f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"
-            target = self._params[full_key][q_local : q_local + kv_local]
+            if is_qwen3_5:
+                full_key = f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"
+                target = self._params[full_key][q_proj_local : q_proj_local + kv_local]
+            else:
+                full_key = f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"
+                target = self._params[full_key][q_local : q_local + kv_local]
             start = tp.rank * kv_local
             a = _to_target(a_cpu, target)
             b = _to_target(b_cpu[start : start + kv_local], target)
             target.add_(b @ a, alpha=scale)
             return
         if suffix == "self_attn.v_proj":
-            full_key = f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"
-            target = self._params[full_key][q_local + kv_local : q_local + 2 * kv_local]
+            if is_qwen3_5:
+                full_key = f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"
+                target = self._params[full_key][
+                    q_proj_local + kv_local : q_proj_local + 2 * kv_local
+                ]
+            else:
+                full_key = f"model.layers.{layer_idx}.self_attn.qkv_proj.weight"
+                target = self._params[full_key][q_local + kv_local : q_local + 2 * kv_local]
             start = tp.rank * kv_local
             a = _to_target(a_cpu, target)
             b = _to_target(b_cpu[start : start + kv_local], target)

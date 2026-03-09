@@ -31,6 +31,20 @@ def create_kvcache_pool(
     dtype: torch.dtype,
     device: torch.device,
 ) -> BaseKVCachePool:
+    if model_config.has_linear_attention:
+        from .hybrid_pool import HybridKVCache
+
+        return HybridKVCache(
+            num_layers=model_config.num_layers,
+            full_attention_layer_ids=model_config.full_attention_layer_ids,
+            num_kv_heads=model_config.num_kv_heads,
+            num_pages=num_pages,
+            page_size=page_size,
+            head_dim=model_config.head_dim,
+            device=device,
+            dtype=dtype,
+        )
+
     from .mha_pool import MHAKVCache  # TODO: support other variants (e.g. MLA)
 
     return MHAKVCache(
@@ -58,7 +72,28 @@ def create_radix_cache(device: torch.device):
     return RadixPrefixCache(device=device)
 
 
-def create_prefix_cache(device: torch.device, type: str) -> BasePrefixCache:
+def create_prefix_cache(
+    device: torch.device,
+    type: str,
+    *,
+    model_config: ModelConfig | None = None,
+    state_cache=None,
+) -> BasePrefixCache:
+    if (
+        type == "radix"
+        and model_config is not None
+        and model_config.has_linear_attention
+        and state_cache is not None
+        and hasattr(state_cache, "release_snapshot_slot")
+        and hasattr(state_cache, "track_interval")
+    ):
+        from .hybrid_radix_cache import HybridRadixPrefixCache
+
+        return HybridRadixPrefixCache(
+            device=device,
+            release_state_slot=state_cache.release_snapshot_slot,
+            segment_size=int(state_cache.track_interval),
+        )
     return SUPPORTED_CACHE_MANAGER[type](device)
 
 

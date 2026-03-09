@@ -47,7 +47,8 @@ _MODEL_PREFETCH_ALLOW_PATTERNS = (
 
 class DisabledTqdm(tqdm):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, disable=True)
+        kwargs.setdefault("disable", True)
+        super().__init__(*args, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -142,6 +143,22 @@ def _load_raw_config_dict(model_path: str) -> dict[str, Any] | None:
     return None if loaded is None else loaded[1]
 
 
+def _unwrap_text_only_config(config: PretrainedConfig) -> PretrainedConfig:
+    model_type = str(getattr(config, "model_type", ""))
+    text_config = getattr(config, "text_config", None)
+    if model_type not in {"qwen3_5", "qwen3_5_moe"} or text_config is None:
+        return config
+
+    cloned = type(text_config)(**text_config.to_dict())
+    if not getattr(cloned, "architectures", None):
+        if model_type == "qwen3_5_moe":
+            cloned.architectures = ["Qwen3_5MoeForCausalLM"]
+        else:
+            cloned.architectures = ["Qwen3_5ForCausalLM"]
+    cloned._name_or_path = getattr(config, "_name_or_path", getattr(text_config, "_name_or_path", ""))
+    return cloned
+
+
 def _config_signature(config: PretrainedConfig | dict[str, Any]) -> tuple[Any, ...]:
     data = config.to_dict() if hasattr(config, "to_dict") else dict(config)
     return (
@@ -206,6 +223,14 @@ def _resolve_local_or_cached_path(path: str | None) -> str | None:
     if os.path.isdir(path):
         return path
     return _resolve_local_cached_repo_snapshot(path) or path
+
+
+def _repo_id_for_local_snapshot_path(path: str) -> str | None:
+    normalized = os.path.abspath(path)
+    for candidate in _iter_local_model_candidates():
+        if os.path.abspath(candidate.path) == normalized:
+            return candidate.repo_id
+    return None
 
 
 @functools.cache
@@ -376,15 +401,15 @@ def load_tokenizer(model_path: str) -> PreTrainedTokenizerBase:
 def _load_hf_config(model_path: str) -> Any:
     resolved_model_path = _resolve_local_cached_repo_snapshot(model_path) or model_path
     try:
-        return AutoConfig.from_pretrained(resolved_model_path)
+        return _unwrap_text_only_config(AutoConfig.from_pretrained(resolved_model_path))
     except ValueError as exc:
         raw_config = _load_raw_config_dict(resolved_model_path) or {}
         model_type = raw_config.get("model_type")
         architectures = raw_config.get("architectures", [])
-        if model_type == "qwen3_5":
+        if model_type in {"qwen3_5", "qwen3_5_moe"}:
             raise ValueError(
-                f"Model path '{resolved_model_path}' uses the unsupported qwen3_5 architecture "
-                f"({architectures or ['unknown']}), which MiniSGL does not implement yet."
+                f"Model path '{resolved_model_path}' requires a newer Transformers build for "
+                f"{architectures or [model_type]}. Install a release that includes Qwen 3.5 support."
             ) from exc
         raise
 
@@ -397,6 +422,9 @@ def cached_load_hf_config(model_path: str) -> PretrainedConfig:
 def download_hf_weight(model_path: str) -> str:
     if os.path.isdir(model_path):
         if not _path_has_required_files(model_path, ["*.safetensors"]):
+            cached_repo_id = _repo_id_for_local_snapshot_path(model_path)
+            if cached_repo_id is not None:
+                return _hf_snapshot_download(cached_repo_id, allow_patterns=["*.safetensors"])
             raise ValueError(
                 f"Local model path '{model_path}' does not contain any .safetensors weight files."
             )

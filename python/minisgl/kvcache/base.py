@@ -36,6 +36,16 @@ class BaseKVCachePool(ABC):
     @abstractmethod
     def num_layers(self) -> int: ...
 
+    @property
+    def cached_layer_ids(self) -> tuple[int, ...]:
+        return tuple(range(self.num_layers))
+
+    def has_layer(self, layer_id: int) -> bool:
+        return 0 <= layer_id < self.num_layers
+
+    def iter_layer_ids(self) -> tuple[int, ...]:
+        return self.cached_layer_ids
+
 
 @dataclass(frozen=True)
 class BaseCacheHandle(ABC):
