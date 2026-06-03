@@ -27,6 +27,50 @@ Current pushed commits:
 
 ## Validation So Far
 
+### Qwen3-4B Baseline and Improved Branch Scaling
+
+Baseline was run from detached worktree `~/xSGLang-baseline` at `29f4977`.
+That historical tree needed the missing `python/minisgl/llm/hf_compat.py` import stub copied in so it could import `minisgl.llm`; the stub only routes to the native runtime and does not touch the hot path.
+
+Common settings:
+
+```bash
+python benchmark/benchmark_branch_scaling.py \
+  --model Qwen/Qwen3-4B \
+  --block-size 32 \
+  --single-trace-tokens 128 \
+  --warmup-tokens 4 \
+  --memory-ratio 0.75
+```
+
+Results, 128-branch run (`--levels 8 --max-running-req 256 --cuda-graph-max-bs 128`):
+
+| Metric | Baseline | Improved | Ratio |
+| --- | ---: | ---: | ---: |
+| Single-trace TPS | 205.90 | 206.60 | 1.003x |
+| Overall tree TPS | 5068.97 | 5060.95 | 0.998x |
+| Best level TPS | 12070.06 | 11979.97 | 0.993x |
+| Overall spawn children/s | 4961.63 | 7128.62 | 1.437x |
+| 64 live branches -> 128 children spawn | 26.44 ms | 18.39 ms | 1.438x faster |
+
+Results, 256-branch cap run (`--levels 9 --max-running-req 512 --cuda-graph-max-bs 256`):
+
+| Metric | Baseline | Improved | Ratio |
+| --- | ---: | ---: | ---: |
+| Single-trace TPS | 206.60 | 206.23 | 0.998x |
+| Overall tree TPS | 7609.11 | 7544.73 | 0.992x |
+| Best level TPS | 15036.22 | 14908.01 | 0.991x |
+| Overall spawn children/s | 5005.85 | 7078.83 | 1.414x |
+| 128 live branches -> 256 children spawn | 53.61 ms | 36.19 ms | 1.482x faster |
+
+Observed scaling/cap:
+
+- Net decode throughput still rises through 256 live branches: `15036 tok/s` baseline and `14908 tok/s` improved.
+- Per-branch throughput falls from about `207 tok/s/branch` at one branch to about `58 tok/s/branch` at 256 branches.
+- At this shape, the cap is not table slots, KV memory, or CUDA graph memory. Graph capture to batch 256 fits with about `32.38 GiB` free after capture.
+- The visible plateau pressure is decode saturation: larger batches keep improving net TPS but with sharply diminishing per-branch retention after 128 branches.
+- The improvement intentionally targets the act of branching. Decode math is model-bound and remains effectively unchanged; spawn setup is now about `1.4x` faster overall.
+
 ### Small Model Smoke Benchmark
 
 Command:

@@ -1,0 +1,141 @@
+{
+  "label": "qwen4b_improved_l9_b32",
+  "model": "Qwen/Qwen3-4B",
+  "resolved_model_path": "/home/wilhelmhedenskog/.cache/huggingface/hub/models--Qwen--Qwen3-4B/snapshots/1cfa9a7208912126459214e8b04321603b3df60c",
+  "request_text": false,
+  "cuda_graph_max_bs": 256,
+  "memory_ratio": 0.75,
+  "max_running_req": 512,
+  "single_trace": {
+    "emitted_tokens": 128,
+    "wall_s": 0.620657840000149,
+    "tok_s": 206.23279325685996
+  },
+  "branch_tree": {
+    "summary": {
+      "levels": 9,
+      "block_size": 32,
+      "final_live_branches": 256,
+      "total_emitted_tokens": 16352,
+      "total_decode_wall_s": 2.1673408669998935,
+      "overall_total_tok_s": 7544.72923432436,
+      "best_single_level_tok_s": 14908.006761228373,
+      "best_level": 9,
+      "best_level_branches": 256,
+      "total_spawn_children": 510,
+      "total_spawn_wall_s": 0.07204575999958251,
+      "overall_spawn_children_s": 7078.834340882174,
+      "total_free_wall_s": 0.06915087400011544
+    },
+    "levels_detail": [
+      {
+        "level": 1,
+        "live_branches": 1,
+        "emitted_tokens": 32,
+        "decode_wall_s": 0.15443112599996311,
+        "total_tok_s": 207.21211344407112,
+        "tok_s_per_branch": 207.21211344407112,
+        "spawn_wall_s": 0.0005171000002519577,
+        "free_wall_s": 0.0003322190000289993,
+        "spawn_children": 2,
+        "spawn_children_s": 3867.7238426329477
+      },
+      {
+        "level": 2,
+        "live_branches": 2,
+        "emitted_tokens": 64,
+        "decode_wall_s": 0.1580974690000403,
+        "total_tok_s": 404.81356472559145,
+        "tok_s_per_branch": 202.40678236279572,
+        "spawn_wall_s": 0.0007652999997844745,
+        "free_wall_s": 0.0005530650000764581,
+        "spawn_children": 4,
+        "spawn_children_s": 5226.708481806467
+      },
+      {
+        "level": 3,
+        "live_branches": 4,
+        "emitted_tokens": 128,
+        "decode_wall_s": 0.16198783300023933,
+        "total_tok_s": 790.1828034196302,
+        "tok_s_per_branch": 197.54570085490755,
+        "spawn_wall_s": 0.0012896550001642026,
+        "free_wall_s": 0.0010752240000329039,
+        "spawn_children": 8,
+        "spawn_children_s": 6203.209384665989
+      },
+      {
+        "level": 4,
+        "live_branches": 8,
+        "emitted_tokens": 256,
+        "decode_wall_s": 0.16953179699976317,
+        "total_tok_s": 1510.041210737344,
+        "tok_s_per_branch": 188.755151342168,
+        "spawn_wall_s": 0.002249125999696844,
+        "free_wall_s": 0.0020982450000701647,
+        "spawn_children": 16,
+        "spawn_children_s": 7113.874457080935
+      },
+      {
+        "level": 5,
+        "live_branches": 16,
+        "emitted_tokens": 512,
+        "decode_wall_s": 0.1818585770001846,
+        "total_tok_s": 2815.3744983910233,
+        "tok_s_per_branch": 175.96090614943896,
+        "spawn_wall_s": 0.004395654999825638,
+        "free_wall_s": 0.004084626999883767,
+        "spawn_children": 32,
+        "spawn_children_s": 7279.916190253635
+      },
+      {
+        "level": 6,
+        "live_branches": 32,
+        "emitted_tokens": 1024,
+        "decode_wall_s": 0.20246960599979502,
+        "total_tok_s": 5057.54923038195,
+        "tok_s_per_branch": 158.04841344943594,
+        "spawn_wall_s": 0.00839525199990021,
+        "free_wall_s": 0.008079893999820342,
+        "spawn_children": 64,
+        "spawn_children_s": 7623.356630719451
+      },
+      {
+        "level": 7,
+        "live_branches": 64,
+        "emitted_tokens": 2048,
+        "decode_wall_s": 0.245222996999928,
+        "total_tok_s": 8351.582131591847,
+        "tok_s_per_branch": 130.49347080612262,
+        "spawn_wall_s": 0.018247616000280686,
+        "free_wall_s": 0.016692381000211753,
+        "spawn_children": 128,
+        "spawn_children_s": 7014.614950140944
+      },
+      {
+        "level": 8,
+        "live_branches": 128,
+        "emitted_tokens": 4096,
+        "decode_wall_s": 0.34423808900010044,
+        "total_tok_s": 11898.741396971922,
+        "tok_s_per_branch": 92.95891716384314,
+        "spawn_wall_s": 0.0361860559996785,
+        "free_wall_s": 0.03623521899999105,
+        "spawn_children": 256,
+        "spawn_children_s": 7074.548273574618
+      },
+      {
+        "level": 9,
+        "live_branches": 256,
+        "emitted_tokens": 8192,
+        "decode_wall_s": 0.5495033729998795,
+        "total_tok_s": 14908.006761228373,
+        "tok_s_per_branch": 58.23440141104833,
+        "spawn_wall_s": null,
+        "free_wall_s": null,
+        "spawn_children": 0,
+        "spawn_children_s": null
+      }
+    ]
+  }
+}
