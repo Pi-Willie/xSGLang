@@ -294,34 +294,42 @@ class BranchGRPOLoop:
 
     # ---- evaluation -------------------------------------------------------
     @torch.no_grad()
-    def eval_greedy(self, eval_rows: list[dict[str, Any]], *, max_new_tokens: int) -> dict[str, float]:
-        from minisgl.core import OUTPUT_TEXT, OUTPUT_TOKENS, SamplingParams
+    def eval_greedy(self, eval_rows: list[dict[str, Any]], *, max_new_tokens: int,
+                    chunk_size: int = 32) -> dict[str, float]:
+        """Batched greedy held-out eval via xsglang continuous batching (chunked by KV budget)."""
+        from minisgl.core import OUTPUT_TOKENS, BlockSpec, SamplingParams
 
         correct = valid = rep = 0
         total = len(eval_rows)
         lengths = []
-        for row in eval_rows:
-            req = self.llm.open_continuation(
-                str(row["prompt"]),
-                SamplingParams(temperature=0.0, top_k=1, top_p=1.0, ignore_eos=False, max_tokens=max_new_tokens),
-                requested_outputs=(OUTPUT_TOKENS, OUTPUT_TEXT),
-            )
+        params = SamplingParams(temperature=0.0, top_k=1, top_p=1.0,
+                                ignore_eos=False, max_tokens=max_new_tokens)
+        for start in range(0, total, chunk_size):
+            chunk = eval_rows[start:start + chunk_size]
+            conts = [self.llm.open_continuation(str(r["prompt"]), params,
+                                                requested_outputs=(OUTPUT_TOKENS,)) for r in chunk]
             try:
-                res = req.run_block(max_new_tokens=max_new_tokens,
-                                    request_outputs=(OUTPUT_TOKENS, OUTPUT_TEXT))
-                cont = res.continuation_results[0]
-                text = cont.text if cont.text is not None else self.llm.tokenizer.decode(
-                    cont.emitted_token_ids.tolist(), skip_special_tokens=False)
-                toks = cont.emitted_token_ids.tolist()
+                res = self.llm.run_block(BlockSpec(
+                    continuation_ids=tuple(c.continuation_id for c in conts),
+                    max_new_tokens=max_new_tokens, stop_on_eos=True,
+                    request_outputs=(OUTPUT_TOKENS,)))
+                by_id = {item.continuation_id: item for item in res.continuation_results}
+                for r, c in zip(chunk, conts):
+                    toks = [int(v) for v in by_id[c.continuation_id].emitted_token_ids.tolist()]
+                    text = self.llm.tokenizer.decode(toks, skip_special_tokens=False)
+                    lengths.append(len(toks))
+                    ans = extract_answer_tag(text)
+                    if ans is not None and normalize_answer(ans):
+                        valid += 1
+                    correct += int(binary_tag_reward(text, r.get("answer")) > 0.0)
+                    if _has_repetition(toks):
+                        rep += 1
             finally:
-                self.llm.free_continuation(req)
-            lengths.append(len(toks))
-            ans = extract_answer_tag(text)
-            if ans is not None and normalize_answer(ans):
-                valid += 1
-            correct += int(binary_tag_reward(text, row.get("answer")) > 0.0)
-            if _has_repetition(toks):
-                rep += 1
+                for c in conts:
+                    try:
+                        self.llm.free_continuation(c)
+                    except Exception:
+                        pass
         d = max(1, total)
         return {
             "greedy_accuracy": correct / d,
