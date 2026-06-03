@@ -30,6 +30,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tokens", type=int, default=6)
     parser.add_argument("--train-lr", type=float, default=0.01)
     parser.add_argument("--advantage", type=float, default=1.0)
+    parser.add_argument("--skip-corrupt-refresh", action="store_true")
+    parser.add_argument("--skip-lora-hot-swap", action="store_true")
+    parser.add_argument("--skip-train-step", action="store_true")
     return parser.parse_args()
 
 
@@ -240,9 +243,17 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="xsglang-refresh-") as tmp:
         work_dir = Path(tmp)
         try:
-            payload["corrupt_refresh"] = _validate_corrupt_refresh(llm, args)
-            payload["lora_hot_swap"] = _validate_lora_hot_swap(llm, model_path, work_dir)
-            payload["tiny_policy_step"] = _validate_train_refresh(llm, model_path, work_dir, args)
+            if not args.skip_corrupt_refresh:
+                payload["corrupt_refresh"] = _validate_corrupt_refresh(llm, args)
+            if not args.skip_lora_hot_swap:
+                payload["lora_hot_swap"] = _validate_lora_hot_swap(llm, model_path, work_dir)
+            if not args.skip_train_step:
+                payload["tiny_policy_step"] = _validate_train_refresh(
+                    llm,
+                    model_path,
+                    work_dir,
+                    args,
+                )
         finally:
             llm.shutdown()
 
