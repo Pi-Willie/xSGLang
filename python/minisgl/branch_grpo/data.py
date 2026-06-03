@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import heapq
 import hashlib
 import json
 import os
@@ -200,6 +201,102 @@ def prepare_openr1(
     return summary
 
 
+def _openr1_stream(dataset_name: str, split: str) -> Iterable[dict[str, Any]]:
+    from datasets import load_dataset
+
+    yield from load_dataset(dataset_name, split=split, streaming=True)
+
+
+def iter_openr1_train_rows(
+    *,
+    dataset_name: str = "open-r1/OpenR1-Math-220k",
+    split: str = "train",
+    seed: int = 20260603,
+    heldout_path: Path | None = None,
+) -> Iterable[dict[str, Any]]:
+    heldout_keys = set()
+    if heldout_path is not None and heldout_path.exists():
+        heldout_keys = {row["split_key"] for row in _read_jsonl(heldout_path)}
+    for row in _openr1_stream(dataset_name, split):
+        normalized = _normalize_openr1_row(row)
+        if normalized is None:
+            continue
+        normalized["split_key"] = _stable_key(
+            normalized["problem"],
+            normalized["normalized_answer"],
+            seed=seed,
+        )
+        if normalized["split_key"] in heldout_keys:
+            continue
+        yield normalized
+
+
+def prepare_openr1_heldout(
+    *,
+    dataset_name: str,
+    split: str,
+    output_dir: Path,
+    eval_size: int,
+    seed: int,
+    max_rows: int,
+) -> dict[str, Any]:
+    heap: list[tuple[int, int, dict[str, Any]]] = []
+    inspected_schema = None
+    scanned = 0
+    filtered = 0
+    for row in _openr1_stream(dataset_name, split):
+        scanned += 1
+        if inspected_schema is None:
+            inspected_schema = {key: type(value).__name__ for key, value in row.items()}
+        normalized = _normalize_openr1_row(row)
+        if normalized is not None:
+            normalized["id"] = f"openr1-{filtered}"
+            normalized["split_key"] = _stable_key(
+                normalized["problem"],
+                normalized["normalized_answer"],
+                seed=seed,
+            )
+            key_int = int(normalized["split_key"], 16)
+            entry = (-key_int, filtered, normalized)
+            if len(heap) < eval_size:
+                heapq.heappush(heap, entry)
+            elif key_int < -heap[0][0]:
+                heapq.heapreplace(heap, entry)
+            filtered += 1
+        if max_rows and scanned >= max_rows:
+            break
+
+    eval_rows = [entry[2] for entry in heap]
+    eval_rows.sort(key=lambda item: item["split_key"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    eval_path = output_dir / "openr1_heldout_eval.jsonl"
+    summary_path = output_dir / "openr1_summary.json"
+    _write_jsonl(eval_path, eval_rows)
+    summary = {
+        "dataset": dataset_name,
+        "split": split,
+        "mode": "heldout_only_train_streamed",
+        "prompt_template": PROMPT_TEMPLATE_VERSION,
+        "seed": seed,
+        "max_rows": max_rows,
+        "scanned_rows": scanned,
+        "filtered_rows": filtered,
+        "eval_rows": len(eval_rows),
+        "train_rows_materialized": 0,
+        "train_rows_streamable": max(0, filtered - len(eval_rows)),
+        "schema": inspected_schema,
+        "eval_path": str(eval_path),
+        "train_path": None,
+        "first_eval_row": eval_rows[0] if eval_rows else None,
+        "note": (
+            "Training prompts are streamed from OpenR1 and filtered online; only the fixed "
+            "held-out eval split is materialized."
+        ),
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    return summary
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare Branch-GRPO math datasets")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -226,6 +323,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force process exit after outputs are written if streaming cleanup hangs.",
     )
+    openr1.add_argument(
+        "--materialize-train",
+        action="store_true",
+        help="Write the filtered train JSONL. Default is heldout-only with streamed training.",
+    )
+
+    heldout = sub.add_parser("openr1-heldout")
+    heldout.add_argument("--dataset", default="open-r1/OpenR1-Math-220k")
+    heldout.add_argument("--split", default="train")
+    heldout.add_argument("--output-dir", type=Path, required=True)
+    heldout.add_argument("--eval-size", type=int, default=2048)
+    heldout.add_argument("--seed", type=int, default=20260603)
+    heldout.add_argument("--max-rows", type=int, default=0)
+    heldout.add_argument("--force-exit", action="store_true")
     return parser
 
 
@@ -234,7 +345,26 @@ def main() -> None:
     if args.cmd == "sft":
         summary = prepare_sft(args.source, args.output, args.summary)
     elif args.cmd == "openr1":
-        summary = prepare_openr1(
+        if args.materialize_train:
+            summary = prepare_openr1(
+                dataset_name=args.dataset,
+                split=args.split,
+                output_dir=args.output_dir,
+                eval_size=args.eval_size,
+                seed=args.seed,
+                max_rows=args.max_rows,
+            )
+        else:
+            summary = prepare_openr1_heldout(
+                dataset_name=args.dataset,
+                split=args.split,
+                output_dir=args.output_dir,
+                eval_size=args.eval_size,
+                seed=args.seed,
+                max_rows=args.max_rows,
+            )
+    elif args.cmd == "openr1-heldout":
+        summary = prepare_openr1_heldout(
             dataset_name=args.dataset,
             split=args.split,
             output_dir=args.output_dir,

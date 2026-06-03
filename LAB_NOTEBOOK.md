@@ -44,6 +44,11 @@ H100 status:
 - Cached models present:
   - Qwen3-4B cache: about 7.6 GiB.
   - Qwen3-0.6B cache: about 1.5 GiB.
+- Later in the same session, `h100-spot` disappeared from the instance list before it could
+  pull commit `00246a2`. This was treated as preemption. The durable state is the pushed git
+  branch and the local mirrored artifacts.
+- A replacement `h100-branch` spot instance was attempted in `us-east4-a`; it reached
+  `STOPPING` before becoming usable and was deleted.
 
 Work added in this step:
 
@@ -111,6 +116,30 @@ Result:
 - Inspected schema includes `problem`, `solution`, `answer`, `messages`, and correctness metadata.
 - The Python process hung during shutdown after writing outputs; it was terminated manually.
   Outputs were present and inspected.
+- Correction after user feedback: OpenR1 training data should not be materialized. Training
+  prompts will be streamed and filtered online. The smoke train artifact was removed from git.
+
+OpenR1 fixed held-out eval:
+
+An accidental full filtered split was started locally. It completed before interruption:
+
+- Scanned rows: `93733`.
+- Filtered rows with non-empty normalized answer length <= 5: `52557`.
+- Held-out eval rows: `2048`.
+- Streamable train rows: `50509`.
+
+The materialized train file was deleted. Only the fixed held-out eval split is kept:
+
+```text
+experiments/data/openr1_heldout/openr1_heldout_eval.jsonl
+experiments/data/openr1_heldout/openr1_summary.json
+```
+
+The data CLI now defaults `openr1` to heldout-only, and also exposes `openr1-heldout`.
+Both keep only the fixed held-out eval set and record `train_rows_materialized = 0`.
+Writing a train JSONL now requires the explicit `--materialize-train` flag. Runtime training
+should use `iter_openr1_train_rows` to stream filtered OpenR1 prompts while skipping held-out
+`split_key`s.
 
 H100 environment setup:
 
@@ -181,7 +210,6 @@ Result:
 
 Next gates:
 
-1. Build the full OpenR1 filtered train/eval split on the H100 or local workstation and mirror
-   it.
+1. Start or recreate an H100 and sync from commit `00246a2` or later.
 2. Install or make a logged decision about FlashAttention for trainer mode.
 3. Implement and run SFT on Qwen3-4B Base, then mirror the merged SFT artifact locally.

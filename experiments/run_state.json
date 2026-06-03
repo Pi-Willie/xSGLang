@@ -1,15 +1,16 @@
 {
   "active_run_id": null,
-  "phase": "phase0_h100_gates_passed_openr1_full_pending",
+  "phase": "phase1_sft_data_ready_openr1_eval_ready_h100_preempted",
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
-  "h100_status": "running",
+  "h100_status": "preempted_no_running_h100",
   "sft_source_local": "/Users/wilhelmhedenskog/qagent/math/math-fireworks.jsonl",
   "critical_artifacts_local": [
     "experiments/data/sft_math_fireworks.jsonl",
     "experiments/data/sft_math_fireworks_summary.json",
-    "experiments/data/openr1_smoke/openr1_summary.json",
+    "experiments/data/openr1_heldout/openr1_summary.json",
+    "experiments/data/openr1_heldout/openr1_heldout_eval.jsonl",
     "experiments/phase0/env_versions.json",
     "experiments/phase0/qwen4b_branch_scaling_gate.json",
     "experiments/phase0/qwen4b_weight_refresh_gate.json"
@@ -17,6 +18,7 @@
   "last_good_checkpoint": null,
   "resume_notes": [
     "Do not start from scratch if a valid checkpoint appears in a later run state.",
-    "goal.txt forbids flat GRPO despite plan.txt section 19 listing a flat baseline."
+    "goal.txt forbids flat GRPO despite plan.txt section 19 listing a flat baseline.",
+    "OpenR1 training prompts are streamed and filtered online; do not materialize the full train split."
   ]
 }

@@ -1,0 +1,41 @@
+{
+  "dataset": "open-r1/OpenR1-Math-220k",
+  "split": "train",
+  "prompt_template": "branch-grpo-math-v1",
+  "seed": 20260603,
+  "max_rows": 0,
+  "scanned_rows": 93733,
+  "filtered_rows": 52557,
+  "eval_rows": 2048,
+  "schema": {
+    "problem": "str",
+    "solution": "str",
+    "answer": "str",
+    "problem_type": "str",
+    "question_type": "str",
+    "source": "str",
+    "uuid": "str",
+    "is_reasoning_complete": "list",
+    "generations": "list",
+    "correctness_math_verify": "list",
+    "correctness_llama": "NoneType",
+    "finish_reasons": "NoneType",
+    "correctness_count": "int",
+    "messages": "list"
+  },
+  "train_path": null,
+  "eval_path": "experiments/data/openr1_full/openr1_heldout_eval.jsonl",
+  "first_eval_row": {
+    "problem": "## Task B-4.2.\n\nDetermine the smallest natural number $m$ for which the product $3^{\\frac{1}{55}} \\cdot 3^{\\frac{4}{55}} \\cdot 3^{\\frac{7}{55}} \\cdot \\ldots \\cdot 3^{\\frac{3 m-2}{55}}$ is greater than 729?",
+    "answer": "16",
+    "normalized_answer": "16",
+    "prompt_template": "branch-grpo-math-v1",
+    "prompt": "Solve the math problem. Write your reasoning inside <think>...</think> and the final short answer inside <answer>...</answer>.\n\nProblem:\n## Task B-4.2.\n\nDetermine the smallest natural number $m$ for which the product $3^{\\frac{1}{55}} \\cdot 3^{\\frac{4}{55}} \\cdot 3^{\\frac{7}{55}} \\cdot \\ldots \\cdot 3^{\\frac{3 m-2}{55}}$ is greater than 729?\n\nSolution:\n",
+    "id": "openr1-51976",
+    "split_key": "0000fce7057efc5f7b62ffd0a5c16bd2"
+  },
+  "mode": "heldout_only_train_streamed",
+  "train_rows_materialized": 0,
+  "train_rows_streamable": 50509,
+  "note": "Training prompts are streamed from open-r1/OpenR1-Math-220k and filtered online; only this fixed held-out eval split is materialized."
+}
