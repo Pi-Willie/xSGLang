@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -219,6 +221,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="For smoke/debug only. 0 means scan the full stream.",
     )
+    openr1.add_argument(
+        "--force-exit",
+        action="store_true",
+        help="Force process exit after outputs are written if streaming cleanup hangs.",
+    )
     return parser
 
 
@@ -238,6 +245,10 @@ def main() -> None:
     else:
         raise AssertionError(args.cmd)
     print(json.dumps(summary, indent=2, ensure_ascii=False), flush=True)
+    if getattr(args, "force_exit", False):
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":
