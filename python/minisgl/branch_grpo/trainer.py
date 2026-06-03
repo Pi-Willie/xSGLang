@@ -248,12 +248,15 @@ def trainer_selected_logprobs(model: torch.nn.Module, batch: PackedTrainBatch) -
     )
     logits = outputs.logits
     previous_positions = batch.response_positions - 1
+    # Gather only the response-token rows, then compute logprob via logsumexp instead of a
+    # full log_softmax. log_softmax materialises an extra [n_resp, vocab] fp32 tensor (the
+    # alloc that OOM'd on this single-H100 setup); logsumexp is a reduction, so we hold one
+    # fp32 [n_resp, vocab] copy instead of two. Mathematically identical.
     selected_logits = logits[batch.response_batch_indices, previous_positions].float()
     targets = batch.input_ids[batch.response_batch_indices, batch.response_positions]
-    return torch.log_softmax(selected_logits, dim=-1).gather(
-        dim=-1,
-        index=targets.view(-1, 1),
-    ).view(-1)
+    target_logits = selected_logits.gather(dim=-1, index=targets.view(-1, 1)).view(-1)
+    log_z = torch.logsumexp(selected_logits, dim=-1)
+    return target_logits - log_z
 
 
 def _optimizer_step(
