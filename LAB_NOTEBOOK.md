@@ -286,3 +286,20 @@ PYTHONPATH=python python benchmark/validate_runtime_logprobs.py \
 
 That gate compares xsglang selected-token logprobs with HF teacher-forced logprobs for the same
 token sequence and records the max absolute difference.
+
+## 2026-06-03 - H100 start retry
+
+Checked GCP with project/service-account env sourced. The only listed H100 instance is:
+
+- `h100-box`, zone `us-central1-a`, machine type `a3-highgpu-1g`, status `TERMINATED`.
+
+Tried:
+
+```bash
+gcloud compute instances start h100-box --zone=us-central1-a
+```
+
+Result: start failed with `ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS`. The unavailable request is
+`a3-highgpu-1g` with one `nvidia-h100-80gb` accelerator and two local SSDs in `us-central1-a`.
+
+No H100 SSH target is currently available.

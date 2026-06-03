@@ -4,7 +4,7 @@
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
-  "h100_status": "preempted_no_running_h100",
+  "h100_status": "terminated_start_stockout_us-central1-a",
   "sft_source_local": "/Users/wilhelmhedenskog/qagent/math/math-fireworks.jsonl",
   "critical_artifacts_local": [
     "experiments/data/sft_math_fireworks.jsonl",
