@@ -9,11 +9,9 @@ import time
 from pathlib import Path
 
 import torch
-
-from minisgl.core import BlockSpec, ChildContinuationSpec, OUTPUT_TEXT, SamplingParams
+from minisgl.core import OUTPUT_TEXT, BlockSpec, ChildContinuationSpec, SamplingParams
 from minisgl.llm import LLM
 from minisgl.utils import ensure_local_model_path
-
 
 PROMPT = (
     "Write a plain field notebook from a Mars rover traverse. "

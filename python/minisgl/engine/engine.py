@@ -1,18 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import timedelta
 import gc
 import os
-from pathlib import Path
 import tempfile
 import time
+from dataclasses import dataclass, field, replace
+from datetime import timedelta
+from pathlib import Path
 from typing import Any, Dict, Mapping, Tuple
 
 import torch
 from minisgl.attention import create_attention_backend
 from minisgl.core import Batch, Context, Req, clear_global_ctx, set_global_ctx
-from minisgl.distributed import destroy_distributed, enable_pynccl_distributed, reset_tp_info, set_tp_info
+from minisgl.distributed import (
+    destroy_distributed,
+    enable_pynccl_distributed,
+    reset_tp_info,
+    set_tp_info,
+)
 from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight

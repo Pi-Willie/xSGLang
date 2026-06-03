@@ -11,11 +11,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
-
 from minisgl.core import SamplingParams
 from minisgl.llm import LLM
 from minisgl.utils import ensure_local_model_path
-
 
 PROMPT = "Answer with one short word. Continue:"
 TARGET_TEXT = " yes"

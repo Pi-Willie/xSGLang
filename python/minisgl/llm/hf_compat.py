@@ -5,6 +5,7 @@ included in this trimmed repo. Qwen3 (and the other listed architectures)
 are supported by the native runtime, so we always route to NativeLLM.
 """
 from __future__ import annotations
+
 from typing import Any
 
 

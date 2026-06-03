@@ -10,11 +10,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
-
-from minisgl.core import BlockSpec, ChildContinuationSpec, OUTPUT_TEXT, SamplingParams
+from minisgl.core import OUTPUT_TEXT, BlockSpec, ChildContinuationSpec, SamplingParams
 from minisgl.llm import LLM
 from minisgl.utils import ensure_local_model_path
-
 
 PROMPT = (
     "You are solving a short reasoning task. Keep the answer concise and continue "

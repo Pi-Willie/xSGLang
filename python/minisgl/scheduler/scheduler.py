@@ -3,26 +3,38 @@ from __future__ import annotations
 import copy
 import time
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, NamedTuple, NoReturn, Sequence, Set, Tuple, TypeAlias
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    NoReturn,
+    Sequence,
+    Set,
+    Tuple,
+    TypeAlias,
+)
 
 import torch
 from minisgl.core import (
+    DEFAULT_ENGINE_CAP_MASK,
+    OUTPUT_HOOK_OUTPUTS,
+    OUTPUT_TEXT,
+    OUTPUT_TOKENS,
+    OUTPUT_TOPK_IDS,
+    OUTPUT_TOPK_LOGPROBS,
     Batch,
     BlockResult,
     BlockSpec,
     ChildContinuationSpec,
-    ContinuationCapability,
     ContinuationBlockResult,
+    ContinuationCapability,
     ContinuationInspection,
     ContinuationStatus,
-    DEFAULT_ENGINE_CAP_MASK,
     ExecutionLane,
     HookProgram,
-    OUTPUT_HOOK_OUTPUTS,
-    OUTPUT_TEXT,
-    OUTPUT_TOPK_IDS,
-    OUTPUT_TOPK_LOGPROBS,
-    OUTPUT_TOKENS,
     Req,
     Session,
     StepPhase,
@@ -34,9 +46,9 @@ from minisgl.core import (
 from minisgl.distributed import get_tp_info
 from minisgl.env import ENV
 from minisgl.message import (
+    AbortBackendMsg,
     AdapterBackendControlMsg,
     AdapterResultMsg,
-    AbortBackendMsg,
     BaseBackendMsg,
     BatchBackendMsg,
     DetokenizeMsg,
