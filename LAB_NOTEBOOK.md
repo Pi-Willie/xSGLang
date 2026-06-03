@@ -141,6 +141,32 @@ Writing a train JSONL now requires the explicit `--materialize-train` flag. Runt
 should use `iter_openr1_train_rows` to stream filtered OpenR1 prompts while skipping held-out
 `split_key`s.
 
+SFT script prepared:
+
+```text
+experiments/scripts/sft_qwen3_math.py
+```
+
+Capabilities:
+
+- Loads `experiments/data/sft_math_fireworks.jsonl`.
+- Splits a deterministic held-out subset from the 1000 SFT rows.
+- Tokenizes the exact shared prompt/completion schema.
+- Greedily packs examples up to `--max-length` unless `--no-pack` is passed.
+- Full-finetunes the model in BF16 with gradient checkpointing.
+- Logs per-step SFT metrics to `sft_metrics.jsonl`.
+- Runs greedy format/answer evaluation on the SFT held-out split.
+- Saves a standalone model directory under `<output-dir>/model`.
+
+Local validation:
+
+```bash
+python3 -m py_compile experiments/scripts/sft_qwen3_math.py
+PYTHONPATH=python python3 experiments/scripts/sft_qwen3_math.py --help
+```
+
+Both passed. Actual SFT training still requires an H100.
+
 H100 environment setup:
 
 - Installed `datasets==4.5.0` into `~/xSGLang/.venv` with `--no-cache-dir`.
@@ -212,4 +238,5 @@ Next gates:
 
 1. Start or recreate an H100 and sync from commit `00246a2` or later.
 2. Install or make a logged decision about FlashAttention for trainer mode.
-3. Implement and run SFT on Qwen3-4B Base, then mirror the merged SFT artifact locally.
+3. Run SFT on Qwen3-4B Base with `experiments/scripts/sft_qwen3_math.py`, then mirror the
+   standalone SFT artifact locally.

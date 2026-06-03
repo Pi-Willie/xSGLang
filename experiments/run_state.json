@@ -1,6 +1,6 @@
 {
   "active_run_id": null,
-  "phase": "phase1_sft_data_ready_openr1_eval_ready_h100_preempted",
+  "phase": "phase1_sft_script_ready_h100_preempted",
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
@@ -11,6 +11,7 @@
     "experiments/data/sft_math_fireworks_summary.json",
     "experiments/data/openr1_heldout/openr1_summary.json",
     "experiments/data/openr1_heldout/openr1_heldout_eval.jsonl",
+    "experiments/scripts/sft_qwen3_math.py",
     "experiments/phase0/env_versions.json",
     "experiments/phase0/qwen4b_branch_scaling_gate.json",
     "experiments/phase0/qwen4b_weight_refresh_gate.json"
