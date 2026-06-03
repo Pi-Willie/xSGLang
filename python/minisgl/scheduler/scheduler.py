@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import time
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, NoReturn, Sequence, Set, Tuple, TypeAlias
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, NamedTuple, NoReturn, Sequence, Set, Tuple, TypeAlias
 
 import torch
 from minisgl.core import (
@@ -275,6 +275,28 @@ class Scheduler(SchedulerIOMixin):
         return {
             "model_path": result.model_path,
             "resolved_model_path": result.resolved_model_path,
+            "elapsed_ms": result.elapsed_ms,
+            "preserved_adapter": result.preserved_adapter,
+            "released_continuations": released,
+        }
+
+    def refresh_model_weights_from_state_dict(
+        self,
+        state_dict: Mapping[str, torch.Tensor],
+        *,
+        source: str = "state_dict",
+        preserve_adapter: bool = True,
+    ) -> Dict[str, Any]:
+        torch.cuda.synchronize(self.device)
+        self.sync_all_ranks()
+        released = self.reset_runtime_state()
+        result = self.engine.update_weights_from_state_dict(
+            state_dict,
+            source=source,
+            preserve_adapter=preserve_adapter,
+        )
+        return {
+            "source": result.source,
             "elapsed_ms": result.elapsed_ms,
             "preserved_adapter": result.preserved_adapter,
             "released_continuations": released,
