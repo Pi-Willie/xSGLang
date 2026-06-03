@@ -28,7 +28,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--forced-token-text", default=None)
     parser.add_argument("--max-running-req", type=int, default=16)
     parser.add_argument("--memory-ratio", type=float, default=0.25)
-    parser.add_argument("--atol", type=float, default=0.03)
+    parser.add_argument("--attention-backend", default="auto")
+    parser.add_argument("--cuda-graph-max-bs", type=int, default=None)
+    parser.add_argument("--mean-atol", type=float, default=2e-3)
+    parser.add_argument("--max-atol", type=float, default=5e-2)
     return parser.parse_args()
 
 
@@ -55,6 +58,8 @@ def _run_minisgl(model_path: str, args: argparse.Namespace) -> dict[str, Any]:
         dtype=torch.bfloat16,
         max_running_req=args.max_running_req,
         memory_ratio=args.memory_ratio,
+        attention_backend=args.attention_backend,
+        cuda_graph_max_bs=args.cuda_graph_max_bs,
     )
     req = None
     try:
@@ -137,9 +142,12 @@ def main() -> None:
 
     diffs = [abs(a - b) for a, b in zip(x_logprobs, hf_logprobs)]
     max_abs_diff = max(diffs, default=0.0)
+    mean_abs_diff = sum(diffs) / len(diffs) if diffs else 0.0
     output = {
         "model": args.model,
         "resolved_model_path": model_path,
+        "attention_backend": args.attention_backend,
+        "cuda_graph_max_bs": args.cuda_graph_max_bs,
         "prompt": args.prompt,
         "token_ids": minisgl["token_ids"],
         "text": minisgl["text"],
@@ -147,9 +155,11 @@ def main() -> None:
         "minisgl_logprobs": x_logprobs,
         "hf_logprobs": hf_logprobs,
         "abs_diffs": diffs,
+        "mean_abs_diff": mean_abs_diff,
         "max_abs_diff": max_abs_diff,
-        "atol": args.atol,
-        "passed": max_abs_diff <= args.atol,
+        "mean_atol": args.mean_atol,
+        "max_atol": args.max_atol,
+        "passed": mean_abs_diff <= args.mean_atol and max_abs_diff <= args.max_atol,
         "elapsed_ms": minisgl["elapsed_ms"],
     }
     Path(args.json_output).parent.mkdir(parents=True, exist_ok=True)
