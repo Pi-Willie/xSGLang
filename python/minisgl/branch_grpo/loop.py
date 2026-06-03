@@ -295,7 +295,7 @@ class BranchGRPOLoop:
     # ---- evaluation -------------------------------------------------------
     @torch.no_grad()
     def eval_greedy(self, eval_rows: list[dict[str, Any]], *, max_new_tokens: int,
-                    chunk_size: int = 32) -> dict[str, float]:
+                    chunk_size: int = 16) -> dict[str, float]:
         """Batched greedy held-out eval via xsglang continuous batching (chunked by KV budget)."""
         from minisgl.core import OUTPUT_TOKENS, BlockSpec, SamplingParams
 
