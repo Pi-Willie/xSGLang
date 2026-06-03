@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
+import gc
 import os
 from pathlib import Path
 import tempfile
+import time
 from typing import Any, Dict, Tuple
 
 import torch
@@ -48,6 +50,14 @@ class ForwardOutput:
     topk_logprobs_cpu: torch.Tensor | None = None
 
 
+@dataclass(frozen=True)
+class WeightReloadResult:
+    model_path: str
+    resolved_model_path: str
+    elapsed_ms: float
+    preserved_adapter: str | None
+
+
 class Engine:
     def __init__(self, config: EngineConfig):
         _ensure_runtime_cache_dirs()
@@ -60,6 +70,7 @@ class Engine:
             logger.debug("CUDA already initialized before Engine startup.")
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         _adjust_config(config)
+        self.config = config
 
         self.device = torch.device(f"cuda:{config.tp_info.rank}")
         torch.cuda.set_device(self.device)
@@ -205,6 +216,71 @@ class Engine:
                 k: v.to(self.dtype)
                 for k, v in load_weight(config.resolved_model_path, self.device).items()
             }
+
+    def _copy_weight_state_dict(self, config: EngineConfig) -> None:
+        new_state_dict = self._load_weight_state_dict(config)
+        current_state_dict = self.model.state_dict()
+        missing = sorted(set(current_state_dict) - set(new_state_dict))
+        unexpected = sorted(set(new_state_dict) - set(current_state_dict))
+        if missing or unexpected:
+            raise RuntimeError(
+                "Reload checkpoint does not match the current model:"
+                f" missing={missing[:8]} unexpected={unexpected[:8]}"
+            )
+
+        with torch.no_grad():
+            for name, target in current_state_dict.items():
+                source = new_state_dict.pop(name)
+                if target.shape != source.shape:
+                    raise RuntimeError(
+                        f"Reload tensor shape mismatch for {name}:"
+                        f" current={tuple(target.shape)} new={tuple(source.shape)}"
+                    )
+                target.copy_(source.to(device=target.device, dtype=target.dtype, non_blocking=True))
+        del new_state_dict
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    def reload_weights(
+        self,
+        model_path: str | None = None,
+        *,
+        preserve_adapter: bool = True,
+    ) -> WeightReloadResult:
+        target_model_path = model_path or self.config.model_path
+        new_config = replace(self.config, model_path=target_model_path, lora_path=None)
+        if new_config.model_config != self.config.model_config:
+            raise RuntimeError(
+                "In-place model reload requires the same architecture, tokenizer size, and "
+                "runtime dimensions. Restart the engine for architecture-changing checkpoints."
+            )
+
+        active_adapter = self.lora_manager.active_adapter
+        if active_adapter is not None:
+            self.lora_manager.unload()
+
+        torch.cuda.synchronize(self.device)
+        started = time.perf_counter()
+        self._copy_weight_state_dict(new_config)
+        torch.cuda.synchronize(self.device)
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+        self.config = new_config
+        self.lora_manager = LoRAManager(
+            model=self.model,
+            model_config=new_config.model_config,
+            base_model_path=new_config.resolved_model_path,
+        )
+        preserved_adapter = None
+        if preserve_adapter and active_adapter is not None:
+            preserved_adapter = self.lora_manager.load(active_adapter)
+
+        return WeightReloadResult(
+            model_path=target_model_path,
+            resolved_model_path=new_config.resolved_model_path,
+            elapsed_ms=elapsed_ms,
+            preserved_adapter=preserved_adapter,
+        )
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
         new_free_memory = self._sync_get_memory()[1]

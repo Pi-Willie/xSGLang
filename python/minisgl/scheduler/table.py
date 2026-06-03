@@ -14,6 +14,10 @@ class TableManager:
     def available_size(self) -> int:
         return len(self._free_slots)
 
+    @property
+    def max_running_reqs(self) -> int:
+        return self._max_running_reqs
+
     def allocate(self) -> int:
         return self._free_slots.pop()
 

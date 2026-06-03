@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
+from pathlib import Path
 
 import torch
 
-from minisgl.core import BlockSpec, ChildContinuationSpec, SamplingParams
+from minisgl.core import BlockSpec, ChildContinuationSpec, OUTPUT_TEXT, SamplingParams
 from minisgl.llm import LLM
 from minisgl.utils import ensure_local_model_path
 
@@ -25,6 +27,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--levels", type=int, default=8, help="How many tree levels to run")
     parser.add_argument("--block-size", type=int, default=40, help="Tokens per block on each live branch")
     parser.add_argument("--warmup-tokens", type=int, default=2, help="Untimed tokens to warm the engine once")
+    parser.add_argument(
+        "--request-text",
+        action="store_true",
+        help="Decode block text in results. Leave disabled for pure throughput measurement.",
+    )
+    parser.add_argument(
+        "--cuda-graph-max-bs",
+        type=int,
+        default=None,
+        help="Largest CUDA graph batch size to capture. Use 0 to disable graphs.",
+    )
+    parser.add_argument("--json-output", help="Optional path for machine-readable benchmark results")
     parser.add_argument(
         "--max-running-req",
         type=int,
@@ -76,7 +90,11 @@ def _print_intro(args: argparse.Namespace) -> None:
     print()
 
 
-def _warm_once(llm: LLM, warmup_tokens: int) -> None:
+def _requested_outputs(args: argparse.Namespace) -> tuple[str, ...]:
+    return (OUTPUT_TEXT,) if args.request_text else ()
+
+
+def _warm_once(llm: LLM, warmup_tokens: int, requested_outputs: tuple[str, ...]) -> None:
     # This tiny untimed pass keeps the printed throughput focused on steady-state
     # decode instead of one-time setup work.
     warm = llm.open_continuation(
@@ -88,9 +106,13 @@ def _warm_once(llm: LLM, warmup_tokens: int) -> None:
             ignore_eos=True,
             max_tokens=warmup_tokens + 8,
         ),
-        requested_outputs=("text",),
+        requested_outputs=requested_outputs,
     )
-    warm.run_block(max_new_tokens=warmup_tokens, min_new_tokens=warmup_tokens, request_outputs=("text",))
+    warm.run_block(
+        max_new_tokens=warmup_tokens,
+        min_new_tokens=warmup_tokens,
+        request_outputs=requested_outputs,
+    )
     llm.free_continuation(warm)
 
 
@@ -108,6 +130,8 @@ def _print_level(
     wall_s: float,
     total_tps: float,
     per_branch_tps: float,
+    fork_wall_s: float | None = None,
+    fork_children: int = 0,
 ) -> None:
     print(f"[{level}/{levels}] running {live} live branches")
     print(
@@ -115,6 +139,12 @@ def _print_level(
         f" | total_tok/s {total_tps:7.2f}"
         f" | tok/s/branch {per_branch_tps:6.2f}"
     )
+    if fork_wall_s is not None:
+        fork_rate = fork_children / fork_wall_s if fork_wall_s > 0 else 0.0
+        print(
+            f"  forked {fork_children} children in {fork_wall_s * 1000.0:.2f} ms"
+            f" | children/s {fork_rate:8.2f}"
+        )
 
 
 def main() -> None:
@@ -128,7 +158,12 @@ def main() -> None:
     local_model_path = ensure_local_model_path(args.model)
     if local_model_path != args.model:
         print(f"  using local snapshot: {local_model_path}", flush=True)
-    llm = LLM(model_path=local_model_path, cuda_graph_max_bs=0, max_running_req=args.max_running_req)
+    requested_outputs = _requested_outputs(args)
+    llm = LLM(
+        model_path=local_model_path,
+        cuda_graph_max_bs=args.cuda_graph_max_bs,
+        max_running_req=args.max_running_req,
+    )
     root = llm.open_continuation(
         PROMPT,
         SamplingParams(
@@ -138,7 +173,7 @@ def main() -> None:
             ignore_eos=True,
             max_tokens=args.levels * args.block_size + 64,
         ),
-        requested_outputs=("text",),
+        requested_outputs=requested_outputs,
         metadata={"path": ""},
     )
 
@@ -146,6 +181,9 @@ def main() -> None:
     total_tokens = 0
     total_wall_s = 0.0
     best_total_tps = 0.0
+    total_fork_wall_s = 0.0
+    total_fork_children = 0
+    level_stats = []
 
     print(f"model: {args.model}")
     print(f"block size: {args.block_size} tokens")
@@ -153,7 +191,7 @@ def main() -> None:
     print()
 
     print("Warming once before the measured tree starts...", flush=True)
-    _warm_once(llm, warmup_tokens=args.warmup_tokens)
+    _warm_once(llm, warmup_tokens=args.warmup_tokens, requested_outputs=requested_outputs)
     print()
 
     for level in range(args.levels):
@@ -165,7 +203,7 @@ def main() -> None:
                 continuation_ids=tuple(req.continuation_id for req in active),
                 max_new_tokens=args.block_size,
                 min_new_tokens=args.block_size,
-                request_outputs=("text",),
+                request_outputs=requested_outputs,
             )
         )
         _sync_cuda()
@@ -177,21 +215,35 @@ def main() -> None:
         total_tps = emitted / wall_s if wall_s > 0 else 0.0
         per_branch_tps = total_tps / live if live else 0.0
         best_total_tps = max(best_total_tps, total_tps)
-        _print_level(
-            level=level + 1,
-            levels=args.levels,
-            live=live,
-            emitted=emitted,
-            wall_s=wall_s,
-            total_tps=total_tps,
-            per_branch_tps=per_branch_tps,
-        )
 
         if level == args.levels - 1:
+            _print_level(
+                level=level + 1,
+                levels=args.levels,
+                live=live,
+                emitted=emitted,
+                wall_s=wall_s,
+                total_tps=total_tps,
+                per_branch_tps=per_branch_tps,
+            )
+            level_stats.append(
+                {
+                    "level": level + 1,
+                    "live_branches": live,
+                    "emitted_tokens": emitted,
+                    "decode_wall_s": wall_s,
+                    "total_tok_s": total_tps,
+                    "tok_s_per_branch": per_branch_tps,
+                    "fork_wall_s": None,
+                    "fork_children": 0,
+                    "fork_children_s": None,
+                }
+            )
             break
 
         # Each leaf becomes two children that reuse the same live prefix state.
         next_active = []
+        fork_started = time.perf_counter()
         try:
             for req in active:
                 path = str(req.metadata.get("path", ""))
@@ -203,6 +255,7 @@ def main() -> None:
                 )
                 next_active.extend(children)
                 llm.free_continuation(req)
+            fork_wall_s = time.perf_counter() - fork_started
         except RuntimeError as exc:
             if "No free table slots left for fork" not in str(exc):
                 raise
@@ -215,6 +268,33 @@ def main() -> None:
                 _free_if_active(llm, req)
             llm.shutdown()
             return
+        fork_children = len(next_active)
+        total_fork_wall_s += fork_wall_s
+        total_fork_children += fork_children
+        _print_level(
+            level=level + 1,
+            levels=args.levels,
+            live=live,
+            emitted=emitted,
+            wall_s=wall_s,
+            total_tps=total_tps,
+            per_branch_tps=per_branch_tps,
+            fork_wall_s=fork_wall_s,
+            fork_children=fork_children,
+        )
+        level_stats.append(
+            {
+                "level": level + 1,
+                "live_branches": live,
+                "emitted_tokens": emitted,
+                "decode_wall_s": wall_s,
+                "total_tok_s": total_tps,
+                "tok_s_per_branch": per_branch_tps,
+                "fork_wall_s": fork_wall_s,
+                "fork_children": fork_children,
+                "fork_children_s": fork_children / fork_wall_s if fork_wall_s > 0 else 0.0,
+            }
+        )
         active = next_active
         print()
 
@@ -225,6 +305,37 @@ def main() -> None:
     print(f"  total emitted tokens: {total_tokens}")
     print(f"  overall total_tok/s: {total_tps:.2f}")
     print(f"  best single level:   {best_total_tps:.2f} tok/s")
+    if total_fork_children:
+        fork_rate = total_fork_children / total_fork_wall_s if total_fork_wall_s > 0 else 0.0
+        print(f"  forked children:     {total_fork_children}")
+        print(f"  total fork wall:     {total_fork_wall_s:.4f}s")
+        print(f"  overall children/s:  {fork_rate:.2f}")
+
+    if args.json_output:
+        payload = {
+            "model": args.model,
+            "levels": args.levels,
+            "block_size": args.block_size,
+            "max_running_req": args.max_running_req,
+            "request_text": args.request_text,
+            "cuda_graph_max_bs": args.cuda_graph_max_bs,
+            "summary": {
+                "final_leaves": len(active),
+                "total_emitted_tokens": total_tokens,
+                "overall_total_tok_s": total_tps,
+                "best_single_level_tok_s": best_total_tps,
+                "total_fork_children": total_fork_children,
+                "total_fork_wall_s": total_fork_wall_s,
+                "overall_fork_children_s": (
+                    total_fork_children / total_fork_wall_s if total_fork_wall_s > 0 else 0.0
+                ),
+            },
+            "levels_detail": level_stats,
+        }
+        output_path = Path(args.json_output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"  wrote JSON: {output_path}", flush=True)
 
     for req in active:
         llm.free_continuation(req)

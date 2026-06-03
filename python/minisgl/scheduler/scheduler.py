@@ -231,6 +231,55 @@ class Scheduler(SchedulerIOMixin):
         self.sync_all_ranks()
         self.engine.shutdown()
 
+    def reset_runtime_state(self) -> int:
+        released = len(self._state_registry) + len(self.prefill_manager.pending_list)
+        for req in list(self._state_registry.values()):
+            req.status = ContinuationStatus.FREED
+        for pending in self.prefill_manager.pending_list:
+            chunked = pending.chunked_req
+            if chunked is not None:
+                chunked.status = ContinuationStatus.FREED
+
+        self.finished_reqs.clear()
+        self.prefill_manager.pending_list.clear()
+        self.decode_manager.running_reqs.clear()
+        self._state_registry.clear()
+        self._continuation_registry.clear()
+        self._session_members.clear()
+        self._session_metadata.clear()
+        self.table_manager.reset()
+        self.cache_manager.reset()
+        if self.engine.state_cache is not None:
+            if hasattr(self.engine.state_cache, "reset_all"):
+                self.engine.state_cache.reset_all()
+            else:
+                for table_idx in range(self.table_manager.max_running_reqs):
+                    self.engine.state_cache.reset_row(table_idx)
+        return released
+
+    def refresh_model_weights(
+        self,
+        model_path: str | None = None,
+        *,
+        preserve_adapter: bool = True,
+    ) -> Dict[str, Any]:
+        torch.cuda.synchronize(self.device)
+        self.sync_all_ranks()
+        released = self.reset_runtime_state()
+        result = self.engine.reload_weights(
+            model_path=model_path,
+            preserve_adapter=preserve_adapter,
+        )
+        self.tokenizer = load_tokenizer(self.engine.config.tokenizer_path)
+        self.eos_token_id = self.tokenizer.eos_token_id
+        return {
+            "model_path": result.model_path,
+            "resolved_model_path": result.resolved_model_path,
+            "elapsed_ms": result.elapsed_ms,
+            "preserved_adapter": result.preserved_adapter,
+            "released_continuations": released,
+        }
+
     def _next_uid(self) -> int:
         uid = self._next_internal_uid
         self._next_internal_uid -= 1
@@ -337,7 +386,7 @@ class Scheduler(SchedulerIOMixin):
             required |= int(ContinuationCapability.READ_HOOKS)
         if has_writes or has_logit_processors or forced_next_tokens is not None:
             required |= int(ContinuationCapability.WRITE_HOOKS)
-        if outputs.runtime_outputs or outputs.model_outputs:
+        if self._outputs_need_extra_capability(outputs):
             required |= int(
                 ContinuationCapability.EXTRA_OUTPUTS | ContinuationCapability.DEBUG_INTROSPECTION
             )
@@ -409,6 +458,16 @@ class Scheduler(SchedulerIOMixin):
         if missing:
             raise RuntimeError(f"Block {block.block_id} block_cap_mask forbids capabilities 0x{missing:x}")
 
+    @staticmethod
+    def _outputs_need_extra_capability(outputs: _ResolvedOutputRequest) -> bool:
+        if outputs.model_outputs or outputs.topk_k > 0:
+            return True
+        return any(name == OUTPUT_HOOK_OUTPUTS for name in outputs.runtime_outputs)
+
+    @staticmethod
+    def _outputs_need_extended_lane(outputs: _ResolvedOutputRequest) -> bool:
+        return bool(outputs.model_outputs or outputs.topk_k > 0)
+
     def _compile_step_plan(
         self,
         *,
@@ -428,7 +487,7 @@ class Scheduler(SchedulerIOMixin):
 
         if forced_next_tokens is not None or has_writes or has_logit_processors:
             lane = ExecutionLane.INTERVENTION
-        elif has_hooks or outputs.runtime_outputs or outputs.model_outputs:
+        elif has_hooks or self._outputs_need_extended_lane(outputs):
             lane = ExecutionLane.EXTENDED_READ
         else:
             lane = ExecutionLane.PLAIN
