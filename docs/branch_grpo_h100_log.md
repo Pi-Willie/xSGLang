@@ -2,7 +2,7 @@
 
 Branch: `branch-grpo-h100-hardening`
 
-Current pushed commits:
+Key pushed commits:
 
 - `a7632f2` - Batch sibling fork setup and cache resets.
 - `e733613` - Add model refresh and branch metrics.
@@ -12,6 +12,7 @@ Current pushed commits:
 - `985cba2` - Add in-memory weight refresh validation.
 - `a22cfa8` - Stabilize tiny policy validation prompt.
 - `a3b9640` - Allow partial weight refresh validation.
+- `f384356` - Add branch GRPO loop validation harness.
 
 ## Design Calls So Far
 
@@ -166,8 +167,31 @@ Result:
 - Corrupt refresh elapsed: `931.81 ms`; restore refresh elapsed: `942.35 ms`.
 - Tiny LoRA load/unload on the 4B engine: `1.90 ms` / `0.27 ms`.
 
+### Branch-GRPO Sample-Train-Refresh-Sample Validation
+
+Validation harness:
+
+```bash
+python benchmark/validate_branch_grpo_loop.py \
+  --model Qwen/Qwen3-0.6B \
+  --json-output benchmark/out/qwen06b_branch_grpo_validation.json \
+  --memory-ratio 0.25 \
+  --max-running-req 32 \
+  --tokens 6 \
+  --train-lr 0.01
+```
+
+Result:
+
+- The native engine sampled a two-sibling branch group from one prompt using `spawn_children` with forced first tokens.
+- Target branch: token id `9834` (`" yes"`), reward `1.0`, normalized advantage `1.0`.
+- Reject branch: token id `902` (`" no"`), reward `0.0`, normalized advantage `-1.0`.
+- The tiny branch-GRPO loss improved target logprob from `-8.5903` to `0.0`.
+- The same loss pushed reject logprob from `-7.7778` to `-107.5`.
+- Full checkpoint refresh into the live engine elapsed: `289.50 ms`.
+- Greedy sample after refresh changed from `[279, 1372, 315, 1251, 879, 614]` to `[9834, 9834, 9834, 9834, 9834, 9834]`.
+- Validation checks all passed: nonzero branch reward, mixed advantages, target improvement, reject degradation, and changed post-refresh output.
+
 ## Remaining
 
-- Run final cleanup/review checks.
-- Commit validation artifacts and updated log.
 - Close the H100 instance after the completion audit passes.
