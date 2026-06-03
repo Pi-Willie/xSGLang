@@ -1,0 +1,107 @@
+{
+  "model": "Qwen/Qwen3-0.6B",
+  "levels": 8,
+  "block_size": 40,
+  "max_running_req": 256,
+  "request_text": false,
+  "cuda_graph_max_bs": null,
+  "summary": {
+    "final_leaves": 128,
+    "total_emitted_tokens": 10200,
+    "overall_total_tok_s": 10124.169132888694,
+    "best_single_level_tok_s": 18432.360433740916,
+    "total_fork_children": 254,
+    "total_fork_wall_s": 0.07020658000010371,
+    "overall_fork_children_s": 3617.894505039624
+  },
+  "levels_detail": [
+    {
+      "level": 1,
+      "live_branches": 1,
+      "emitted_tokens": 40,
+      "decode_wall_s": 0.07434512000008908,
+      "total_tok_s": 538.0312789857904,
+      "tok_s_per_branch": 538.0312789857904,
+      "fork_wall_s": 0.0006752629999482451,
+      "fork_children": 2,
+      "fork_children_s": 2961.8089546640167
+    },
+    {
+      "level": 2,
+      "live_branches": 2,
+      "emitted_tokens": 80,
+      "decode_wall_s": 0.07829122899988761,
+      "total_tok_s": 1021.8258293034951,
+      "tok_s_per_branch": 510.91291465174754,
+      "fork_wall_s": 0.0011341980000452168,
+      "fork_children": 4,
+      "fork_children_s": 3526.7210838323936
+    },
+    {
+      "level": 3,
+      "live_branches": 4,
+      "emitted_tokens": 160,
+      "decode_wall_s": 0.08326602200008892,
+      "total_tok_s": 1921.5521068104963,
+      "tok_s_per_branch": 480.3880267026241,
+      "fork_wall_s": 0.0021308919999682985,
+      "fork_children": 8,
+      "fork_children_s": 3754.2963229103198
+    },
+    {
+      "level": 4,
+      "live_branches": 8,
+      "emitted_tokens": 320,
+      "decode_wall_s": 0.0897732299999916,
+      "total_tok_s": 3564.5370006184467,
+      "tok_s_per_branch": 445.56712507730583,
+      "fork_wall_s": 0.004199110999934419,
+      "fork_children": 16,
+      "fork_children_s": 3810.330329503051
+    },
+    {
+      "level": 5,
+      "live_branches": 16,
+      "emitted_tokens": 640,
+      "decode_wall_s": 0.10207465299981777,
+      "total_tok_s": 6269.920898003372,
+      "tok_s_per_branch": 391.87005612521074,
+      "fork_wall_s": 0.008561265000025742,
+      "fork_children": 32,
+      "fork_children_s": 3737.765388631678
+    },
+    {
+      "level": 6,
+      "live_branches": 32,
+      "emitted_tokens": 1280,
+      "decode_wall_s": 0.12595121999993353,
+      "total_tok_s": 10162.664561730133,
+      "tok_s_per_branch": 317.58326755406665,
+      "fork_wall_s": 0.01751076800019291,
+      "fork_children": 64,
+      "fork_children_s": 3654.8939486431964
+    },
+    {
+      "level": 7,
+      "live_branches": 64,
+      "emitted_tokens": 2560,
+      "decode_wall_s": 0.176016263000065,
+      "total_tok_s": 14544.110620045685,
+      "tok_s_per_branch": 227.25172843821383,
+      "fork_wall_s": 0.03599508299998888,
+      "fork_children": 128,
+      "fork_children_s": 3556.041251524258
+    },
+    {
+      "level": 8,
+      "live_branches": 128,
+      "emitted_tokens": 5120,
+      "decode_wall_s": 0.2777723460001198,
+      "total_tok_s": 18432.360433740916,
+      "tok_s_per_branch": 144.0028158886009,
+      "fork_wall_s": null,
+      "fork_children": 0,
+      "fork_children_s": null
+    }
+  ]
+}
