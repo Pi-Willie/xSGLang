@@ -1,15 +1,18 @@
 {
   "active_run_id": null,
-  "phase": "phase0_local_scaffolding_and_data_smoke",
+  "phase": "phase0_h100_gates_passed_openr1_full_pending",
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
-  "h100_status": "stockout_on_start",
+  "h100_status": "running",
   "sft_source_local": "/Users/wilhelmhedenskog/qagent/math/math-fireworks.jsonl",
   "critical_artifacts_local": [
     "experiments/data/sft_math_fireworks.jsonl",
     "experiments/data/sft_math_fireworks_summary.json",
-    "experiments/data/openr1_smoke/openr1_summary.json"
+    "experiments/data/openr1_smoke/openr1_summary.json",
+    "experiments/phase0/env_versions.json",
+    "experiments/phase0/qwen4b_branch_scaling_gate.json",
+    "experiments/phase0/qwen4b_weight_refresh_gate.json"
   ],
   "last_good_checkpoint": null,
   "resume_notes": [

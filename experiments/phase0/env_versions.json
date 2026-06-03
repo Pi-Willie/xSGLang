@@ -1,0 +1,16 @@
+{
+  "python": "3.12.3",
+  "torch": "2.9.1+cu128",
+  "cuda": "12.8",
+  "cuda_available": true,
+  "bf16_supported": true,
+  "transformers": "5.10.0",
+  "datasets": "4.5.0",
+  "accelerate": "1.13.0",
+  "safetensors": "0.7.0",
+  "peft": "0.19.1",
+  "pyarrow": "24.0.0",
+  "numpy": "2.4.6",
+  "triton": "3.5.1",
+  "flash_attn": "missing: No module named 'flash_attn'"
+}

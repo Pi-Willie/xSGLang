@@ -35,11 +35,15 @@ Current evidence:
 H100 status:
 
 - `h100-box`: `TERMINATED`.
-- `h100-spot`: `TERMINATED`.
+- `h100-spot`: started successfully after one capacity stockout retry.
 - Starting `h100-spot` failed with `ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS` for
   `a3-highgpu-1g` with one H100 and two local SSDs in `us-central1-a`.
-- This is not treated as a stop condition. Local data/code scaffolding continues while H100
-  capacity is retried or relocated.
+- Retry later in the same session succeeded.
+- After boot: NVIDIA H100 80GB HBM3, BF16 supported, CUDA available, 0 MiB GPU memory used.
+- Root disk after boot and package setup: about 12 GiB free.
+- Cached models present:
+  - Qwen3-4B cache: about 7.6 GiB.
+  - Qwen3-0.6B cache: about 1.5 GiB.
 
 Work added in this step:
 
@@ -108,10 +112,76 @@ Result:
 - The Python process hung during shutdown after writing outputs; it was terminated manually.
   Outputs were present and inspected.
 
+H100 environment setup:
+
+- Installed `datasets==4.5.0` into `~/xSGLang/.venv` with `--no-cache-dir`.
+- Recorded environment files under `experiments/phase0/`.
+- Key versions:
+  - Python `3.12.3`.
+  - torch `2.9.1+cu128`.
+  - CUDA `12.8`.
+  - transformers `5.10.0`.
+  - datasets `4.5.0`.
+  - accelerate `1.13.0`.
+  - peft `0.19.1`.
+  - pyarrow `24.0.0`.
+  - triton `3.5.1`.
+  - FlashAttention import missing. This is recorded; the current xsglang gate uses the native
+    attention backends and passed without it. Before full SFT/RL training, either install a
+    compatible FlashAttention build or explicitly log the decision to use torch SDPA.
+
+H100 xsglang gate:
+
+```bash
+python benchmark/benchmark_branch_scaling.py \
+  --model Qwen/Qwen3-4B \
+  --label phase0_gate \
+  --levels 8 \
+  --block-size 32 \
+  --single-trace-tokens 128 \
+  --warmup-tokens 4 \
+  --memory-ratio 0.75 \
+  --max-running-req 256 \
+  --cuda-graph-max-bs 128 \
+  --json-output experiments/phase0/qwen4b_branch_scaling_gate.json
+```
+
+Result:
+
+- Single-trace TPS: `204.19`.
+- Final live branches: `128`.
+- Overall tree TPS: `4902.21`.
+- Best level TPS: `11203.40` at 128 branches.
+- Total spawn children: `254`.
+- Overall spawn children/s: `6252.89`.
+- CUDA graph capture to batch 128 completed with about `32.71 GiB` free.
+
+H100 full-weight refresh gate:
+
+```bash
+python benchmark/validate_weight_refresh.py \
+  --model Qwen/Qwen3-4B \
+  --json-output experiments/phase0/qwen4b_weight_refresh_gate.json \
+  --memory-ratio 0.25 \
+  --max-running-req 32 \
+  --tokens 4 \
+  --skip-train-step
+```
+
+Result:
+
+- Before tokens: `[330, 785, 4226, 374]`.
+- Corrupt tokens: `[0, 0, 0, 0]`.
+- Restored tokens: `[330, 785, 4226, 374]`.
+- Corrupt changed output: `true`.
+- Restore recovered output: `true`.
+- Corrupt refresh: `976.95 ms`.
+- Restore refresh: `985.65 ms`.
+- LoRA load/unload: `5.93 ms` / `0.30 ms`.
+
 Next gates:
 
-1. Build the full OpenR1 filtered train/eval split, preferably on the H100 env once capacity
-   is available.
-2. Retry H100 capacity and/or find a viable H100 zone.
-3. Once H100 is available, verify environment, run xsglang self-tests, transfer data, and pin
-   trainer dependencies before SFT or RL.
+1. Build the full OpenR1 filtered train/eval split on the H100 or local workstation and mirror
+   it.
+2. Install or make a logged decision about FlashAttention for trainer mode.
+3. Implement and run SFT on Qwen3-4B Base, then mirror the merged SFT artifact locally.
