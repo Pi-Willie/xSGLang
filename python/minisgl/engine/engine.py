@@ -220,6 +220,9 @@ class Engine:
     def _copy_weight_state_dict(self, config: EngineConfig) -> None:
         new_state_dict = self._load_weight_state_dict(config)
         current_state_dict = self.model.state_dict()
+        if config.model_config.tie_word_embeddings:
+            new_state_dict.pop("lm_head.weight", None)
+            new_state_dict.pop("lm_head.bias", None)
         missing = sorted(set(current_state_dict) - set(new_state_dict))
         unexpected = sorted(set(new_state_dict) - set(current_state_dict))
         if missing or unexpected:
