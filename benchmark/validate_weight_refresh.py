@@ -17,7 +17,7 @@ from minisgl.llm import LLM
 from minisgl.utils import ensure_local_model_path
 
 
-PROMPT = "Answer with one short word. The requested word is yes. Answer:"
+PROMPT = "Answer with one short word. Continue:"
 TARGET_TEXT = " yes"
 
 
@@ -28,8 +28,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-running-req", type=int, default=32)
     parser.add_argument("--memory-ratio", type=float, default=0.25)
     parser.add_argument("--tokens", type=int, default=6)
-    parser.add_argument("--train-lr", type=float, default=1.0)
-    parser.add_argument("--advantage", type=float, default=500.0)
+    parser.add_argument("--train-lr", type=float, default=0.01)
+    parser.add_argument("--advantage", type=float, default=1.0)
     return parser.parse_args()
 
 
