@@ -156,6 +156,11 @@ class BranchGRPOLoop:
                    *, capture_weight_delta: bool = False) -> UpdateMetrics:
         cfg = self.config
         m = UpdateMetrics(update_id=update_id)
+        # Persistent-baseline live memory BEFORE any rollout/train transient. This is the
+        # true leak detector: xsglang weights+KV + trainer weights should be flat across
+        # updates; a KV/continuation/python leak shows up as a growing baseline. (Per-update
+        # peak varies with microbatch packing and is NOT a leak signal.)
+        mem_alloc_start_gb = torch.cuda.memory_allocated(self.device) / 1e9
         torch.cuda.reset_peak_memory_stats(self.device)
 
         # ---- B/C. rollout + reward (rewards attached inside rollout builder) ----
@@ -256,6 +261,7 @@ class BranchGRPOLoop:
             "sys_weight_refresh_s": refresh_s,
             "sys_rollout_tokens_per_s": rollout_gen_tokens / rollout_s if rollout_s > 0 else 0.0,
             "sys_peak_gpu_gb": torch.cuda.max_memory_allocated(self.device) / 1e9,
+            "sys_mem_alloc_start_gb": mem_alloc_start_gb,
             "lr": cfg.lr,
         })
         # branch diagnostics by depth

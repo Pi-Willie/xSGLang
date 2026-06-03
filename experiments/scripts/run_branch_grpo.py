@@ -122,6 +122,12 @@ def run_health_gate(loop: BranchGRPOLoop, args: argparse.Namespace, out: Path) -
     final_probe_lp = _probe_logprobs(loop)
     xsglang_drift = sum(abs(a - b) for a, b in zip(init_probe_lp, final_probe_lp))
     peaks = [u["sys_peak_gpu_gb"] for u in per_update]
+    # Leak detector: the live-memory baseline at each update start (xsglang+trainer, before
+    # transient training memory) must be flat. Skip u0 (allocator warmup / first CUDA-graph
+    # pools). Per-update PEAK varies with microbatch packing and is reported but not gated.
+    baselines = [u["sys_mem_alloc_start_gb"] for u in per_update]
+    steady = baselines[1:] if len(baselines) > 1 else baselines
+    baseline_growth = (max(steady) - min(steady)) if steady else 0.0
     grads_finite = all(_finite(u["grad_norm"]) and _finite(u["loss"]) for u in per_update)
 
     checks = {
@@ -131,12 +137,13 @@ def run_health_gate(loop: BranchGRPOLoop, args: argparse.Namespace, out: Path) -
         "trainer_weights_moved": any_weight_move,
         "xsglang_generation_changed": xsglang_drift > 1e-6,
         "grads_and_loss_finite": grads_finite,
-        "no_memory_growth": (max(peaks) - min(peaks)) < args.mem_growth_gb if peaks else False,
+        "no_memory_leak": baseline_growth < args.mem_growth_gb,
     }
     report.update({
         "final_parity": final_parity,
         "xsglang_probe_logprob_drift_l1": xsglang_drift,
         "peak_gpu_gb": {"min": min(peaks), "max": max(peaks)} if peaks else {},
+        "baseline_alloc_gb": {"values": [round(b, 2) for b in baselines], "growth": baseline_growth},
         "checks": checks,
         "all_green": all(checks.values()),
         "per_update": per_update,
