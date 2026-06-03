@@ -192,6 +192,9 @@ Result:
 - Greedy sample after refresh changed from `[279, 1372, 315, 1251, 879, 614]` to `[9834, 9834, 9834, 9834, 9834, 9834]`.
 - Validation checks all passed: nonzero branch reward, mixed advantages, target improvement, reject degradation, and changed post-refresh output.
 
-## Remaining
+## Final Audit
 
-- Close the H100 instance after the completion audit passes.
+- Local touched-file `py_compile` passed.
+- Validation artifacts assert cleanly: Qwen3-0.6B corrupt/LoRA/train refresh, Qwen3-4B corrupt/LoRA refresh, and Qwen3-0.6B branch-GRPO loop all pass their recorded checks.
+- H100 remote at `85d5bde` passed touched-file `py_compile`, `ruff check`, and import sanity for `minisgl.llm.LLM` plus `Engine`.
+- The H100 instance can be stopped after this final audit commit is synced.
