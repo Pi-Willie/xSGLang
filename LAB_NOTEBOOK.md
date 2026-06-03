@@ -415,3 +415,40 @@ FlashAttention pip package absent; using torch SDPA (logged decision).
 - `experiments/scripts/run_branch_grpo.py` — `--health-gate` (Phase 4) and training (Phase 6),
   metrics/eval JSONL, best-by-held-out checkpointing, run_state.
 - SFT launched: Qwen3-4B-**Base** (downloaded), `experiments/sft/qwen3_4b_base_v1`.
+
+## 2026-06-04 - Phase 4 loop-health gate: ALL GREEN (after preemption + 2 fixes)
+
+H100 was preempted (TERMINATED, STOP action) mid-session; boot disk persisted, restarted in
+us-central1-a on first retry. SFT model + venv + caches intact. (datasets + ninja had to be
+reinstalled — they were on a prior, now-gone VM / discarded local-SSD.)
+
+First gate run OOM'd at the train step: a single packed microbatch at max_packed_tokens=8192
+peaks at ~80.9 GB (full 151936-vocab logits + fp32 log_softmax), exceeding the ~55 GB free
+after xsglang. Probe (mem_probe.py) measured peak vs L: L=2048->26GB, L=4096->44.5GB,
+L=8192->80.9GB. Fix: cap max_packed_tokens=4096 (~44.5GB trainer + ~16GB xsglang = ~60GB) +
+PYTORCH_ALLOC_CONF=expandable_segments:True. (TODO/optimization: chunked/fused linear-CE per
+plan.txt section 11 to allow larger packs.)
+
+Second issue: my first leak check used peak max-min, which flags benign per-update peak
+variance (microbatch packing differs each update). Replaced with the correct detector: the
+LIVE allocated-memory BASELINE at each update start (xsglang+trainer, before training
+transient) must be flat. 
+
+Smoke config (4 prompts, root4/branch2 x2 = 16 leaves, denom 65536), 8 updates, on the SFT
+Qwen3-4B-Base model. `experiments/runs/health_gate/health_gate.json`:
+
+- parity_healthy: PASS  (init mean 0.029/max 0.189; final mean 0.0043/max 0.032 -- AFTER
+  several real optimizer steps + in-memory refreshes, so this proves the HF->native fused
+  weight-refresh is faithful and rho==1 on-policy holds).
+- denominator_constant: PASS (65536 every update).
+- trainer_weights_moved: PASS (weight-delta L2 > 0 every update).
+- xsglang_generation_changed: PASS (probe logprob drift 0.149 over the run).
+- grads_and_loss_finite: PASS.
+- no_memory_leak: PASS -- baseline allocated memory FLAT at 21.67 GB across all 8 updates
+  (growth 6.1e-5 GB). Definitive: no KV/continuation/python leak.
+- ALL_GREEN: true. Peak GPU 61.6-75.4 GB. Timing: ~28s rollout + ~23s train per update.
+- Branch signal present: mixed-node (sibling-disagreement) rate 0.06-0.23; zero-advantage
+  batch (u? reward 0) gave grad_norm exactly 0 -> zero-signal contributes zero gradient.
+
+Completion Contract item 4 (Branch-GRPO implemented per plan.txt; all loop-health checks
+green with logged evidence) is SATISFIED.
