@@ -452,3 +452,44 @@ Qwen3-4B-Base model. `experiments/runs/health_gate/health_gate.json`:
 
 Completion Contract item 4 (Branch-GRPO implemented per plan.txt; all loop-health checks
 green with logged evidence) is SATISFIED.
+
+## 2026-06-04 - Phase 5 noise band + Phase 6 main training launched
+
+Bug found & fixed: `pkill -f run_branch_grpo` was matching its own SSH shell -> killed the
+connection (repeated exit-255). Use the bracket trick `[r]un_branch_grpo.py`.
+
+Memory tuning for the MAIN config (8 prompts x 32 leaves, denom 262144):
+- Update-0 batched greedy eval (chunk 32) exhausted the KV pool (32 independent long prompts,
+  no shared prefix, ~49k tokens). Rollout is fine (radix prefix-sharing, ~22k tok/tree).
+  Fix: eval chunk_size 32 -> 16.
+- At max_packed_tokens=4096 the train step peaked 78 GB (2 GB margin -> OOM risk). Reduced to
+  3072 -> peak ~68 GB. memory_ratio 0.45 -> KV pool 102249 tokens (14 GB), ample.
+- checkpoint_every 10 (cheap 8GB model save) for safe preemption resume.
+
+Preemption resume: `experiments/scripts/run_branch_grpo.py --resume` reloads
+`<out>/last_model` + run_state (next_update, best_acc), skips already-consumed prompts, reinits
+Adam (negligible at lr 1e-6). H100 launcher `~/launch_train.sh`. A persistent local watcher
+auto-restarts the VM and re-runs the launcher (--resume) on preemption.
+
+BASELINE (SFT Qwen3-4B-Base, held-out greedy eval, N=256, max_gen 1024):
+- eval/greedy_accuracy = 0.227
+- eval/invalid_format_rate = 0.523  (verbose reasoning truncates before </answer>)
+- eval/mean_response_length = 847 tokens
+- init xsglang<->trainer parity: mean 0.0293, max 0.1885 (healthy).
+
+NOISE BAND (Phase 5): binomial sigma = sqrt(p(1-p)/N) = sqrt(0.227*0.773/256) = 0.0262.
+Decision rule used everywhere: a REAL improvement = greedy_accuracy gain > 2 sigma (~0.052)
+above 0.227 (i.e. > ~0.28) that is SUSTAINED over >=2 consecutive eval points (eval cadence 25
+updates). Within-band wiggle is noise. Will cross-check empirically against the spread of the
+first few eval points (model barely moves at lr 1e-6 over 25 updates).
+
+Phase-2 format gate (~95% format adherence) is NOT fully met at the SFT start (~48% greedy
+format validity, truncation-limited by verbose targets vs the 1024 budget). DECISION: proceed
+to RL anyway -- there is a strong reward signal (22.7% correct, sibling disagreement present),
+and the binary verifier reward (truncated/missing answer = 0) directly pressures the model
+toward closing <answer> within budget. Tracking eval/invalid_format_rate as the test of whether
+RL fixes format. Re-SFT for conciseness is the fallback if RL does not improve it.
+
+MAIN run launched: `experiments/runs/branch_main`, target 250 updates, eval+ckpt cadence
+25/10. ~64s rollout + ~30s train per update (prompt-major). u0: reward_mean_slot 0.047,
+mixed-node 0.11. Training to noise-aware plateau under the preemption watcher.

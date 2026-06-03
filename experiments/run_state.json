@@ -1,10 +1,10 @@
 {
   "active_run_id": null,
-  "phase": "phase2_sft_done_preempted_awaiting_capacity",
+  "phase": "phase6_main_training_running",
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
-  "h100_status": "TERMINATED_preempted_us-central1-a_awaiting_start",
+  "h100_status": "RUNNING_us-central1-a",
   "sft_source_local": "/Users/wilhelmhedenskog/qagent/math/math-fireworks.jsonl",
   "critical_artifacts_local": [
     "experiments/data/sft_math_fireworks.jsonl",
@@ -36,5 +36,11 @@
     "note": "truncated at 512; verbose SFT targets (p90~1044 tok)"
   },
   "sft_model_local_pull": "INCOMPLETE (3.85/7.5GB, scp dropped); re-pull after restart",
-  "loop_code": "python/minisgl/branch_grpo/loop.py + experiments/scripts/run_branch_grpo.py (committed 28ee274, pushed origin)"
+  "loop_code": "python/minisgl/branch_grpo/loop.py + experiments/scripts/run_branch_grpo.py (committed 28ee274, pushed origin)",
+  "baseline_greedy_acc": 0.227,
+  "baseline_invalid_fmt": 0.523,
+  "noise_2sigma": 0.052,
+  "real_improvement_threshold_greedy_acc": 0.28,
+  "main_run_dir": "experiments/runs/branch_main",
+  "preemption_watcher": "persistent local monitor + ~/launch_train.sh --resume"
 }
