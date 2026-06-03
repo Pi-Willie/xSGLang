@@ -211,7 +211,14 @@ class HybridRadixPrefixCache(BasePrefixCache):
         return torch.cat(evicted_indices)
 
     def reset(self) -> None:
-        raise NotImplementedError("HybridRadixPrefixCache.reset is not implemented")
+        for node in self._iter_nodes():
+            if node.state_slot is not None:
+                self._release_state_slot(node.state_slot)
+                node.state_slot = None
+        self.evictable_size = 0
+        self.protected_size = 0
+        self.root_node = HybridRadixTreeNode(self.key_fn)
+        self.root_node.ref_count = 1
 
     @property
     def size_info(self) -> SizeInfo:
@@ -258,6 +265,15 @@ class HybridRadixPrefixCache(BasePrefixCache):
                     nodes.append(child)
 
         return leave_nodes
+
+    def _iter_nodes(self) -> List[HybridRadixTreeNode]:
+        nodes: List[HybridRadixTreeNode] = [self.root_node]
+        out: List[HybridRadixTreeNode] = []
+        while nodes:
+            node = nodes.pop()
+            out.append(node)
+            nodes.extend(node.children.values())
+        return out
 
     def _tree_walk(
         self,

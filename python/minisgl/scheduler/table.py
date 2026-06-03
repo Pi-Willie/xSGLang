@@ -17,5 +17,16 @@ class TableManager:
     def allocate(self) -> int:
         return self._free_slots.pop()
 
+    def allocate_many(self, count: int) -> list[int]:
+        if count < 0:
+            raise ValueError("count must be >= 0")
+        if count > len(self._free_slots):
+            raise RuntimeError("No free table slots left for fork")
+        return [self._free_slots.pop() for _ in range(count)]
+
     def free(self, slot: int) -> None:
         self._free_slots.append(slot)
+
+    def reset(self) -> None:
+        self._free_slots = list(range(self._max_running_reqs))
+        self.token_pool.zero_()

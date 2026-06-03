@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -495,6 +495,41 @@ class Qwen3_5StateCache:
             conv[dst_table_idx].copy_(conv[src_table_idx])
             recurrent[dst_table_idx].copy_(recurrent[src_table_idx])
             write_pos[dst_table_idx] = write_pos[src_table_idx]
+
+    def copy_rows(self, src_table_idx: int, dst_table_idxs: Sequence[int]) -> None:
+        if len(dst_table_idxs) == 0:
+            return
+        dst = torch.tensor(dst_table_idxs, dtype=torch.int64, device=self.has_previous.device)
+        self.has_previous.index_copy_(
+            0,
+            dst,
+            self.has_previous[src_table_idx : src_table_idx + 1].expand(len(dst_table_idxs)),
+        )
+        for layer_idx in self.linear_layers:
+            conv = self.conv_states[layer_idx]
+            recurrent = self.recurrent_states[layer_idx]
+            write_pos = self.conv_write_positions[layer_idx]
+            assert conv is not None and recurrent is not None and write_pos is not None
+            conv.index_copy_(
+                0,
+                dst,
+                conv[src_table_idx : src_table_idx + 1].expand(len(dst_table_idxs), -1, -1),
+            )
+            recurrent.index_copy_(
+                0,
+                dst,
+                recurrent[src_table_idx : src_table_idx + 1].expand(
+                    len(dst_table_idxs),
+                    -1,
+                    -1,
+                    -1,
+                ),
+            )
+            write_pos.index_copy_(
+                0,
+                dst,
+                write_pos[src_table_idx : src_table_idx + 1].expand(len(dst_table_idxs)),
+            )
 
     def _allocate_snapshot_slot(self) -> int | None:
         if len(self._snapshot_free_slots) == 0:

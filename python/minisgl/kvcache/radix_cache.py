@@ -175,7 +175,10 @@ class RadixPrefixCache(BasePrefixCache):
         return torch.cat(evicted_indices)
 
     def reset(self) -> None:
-        raise NotImplementedError("RadixManager.reset is not implemented")
+        self.evictable_size = 0
+        self.protected_size = 0
+        self.root_node = RadixTreeNode(self.key_fn)
+        self.root_node.ref_count = 1
 
     @property
     def size_info(self) -> SizeInfo:
