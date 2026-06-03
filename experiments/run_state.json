@@ -1,6 +1,6 @@
 {
   "active_run_id": null,
-  "phase": "phase1_selected_logprobs_ready_h100_unavailable",
+  "phase": "phase1_rollout_builder_ready_h100_unavailable",
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
@@ -13,6 +13,8 @@
     "experiments/data/openr1_heldout/openr1_heldout_eval.jsonl",
     "experiments/scripts/sft_qwen3_math.py",
     "benchmark/validate_runtime_logprobs.py",
+    "python/minisgl/branch_grpo/rollout.py",
+    "benchmark/validate_branch_rollout_builder.py",
     "experiments/phase0/env_versions.json",
     "experiments/phase0/qwen4b_branch_scaling_gate.json",
     "experiments/phase0/qwen4b_weight_refresh_gate.json"
@@ -22,6 +24,7 @@
     "Do not start from scratch if a valid checkpoint appears in a later run state.",
     "goal.txt forbids flat GRPO despite plan.txt section 19 listing a flat baseline.",
     "OpenR1 training prompts are streamed and filtered online; do not materialize the full train split.",
-    "xsglang runtime logprobs are selected-token old logprobs aligned to emitted_token_ids; run benchmark/validate_runtime_logprobs.py on H100 before RL."
+    "xsglang runtime logprobs are selected-token old logprobs aligned to emitted_token_ids; run benchmark/validate_runtime_logprobs.py on H100 before RL.",
+    "Branch-GRPO rollout trees are built by python/minisgl/branch_grpo/rollout.py and locally validated with benchmark/validate_branch_rollout_builder.py."
   ]
 }

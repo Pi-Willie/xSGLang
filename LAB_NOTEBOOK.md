@@ -303,3 +303,24 @@ Result: start failed with `ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS`. The unava
 `a3-highgpu-1g` with one `nvidia-h100-80gb` accelerator and two local SSDs in `us-central1-a`.
 
 No H100 SSH target is currently available.
+
+## 2026-06-03 - Branch-GRPO rollout tree builder
+
+Added `python/minisgl/branch_grpo/rollout.py`:
+
+- Opens one prompt continuation and spawns `root_samples` children to reuse prompt KV.
+- Runs fixed segments to `branch_targets` and then to `max_generation_tokens`.
+- Requests `OUTPUT_LOGPROBS` so every edge stores selected-token old logprobs aligned to emitted
+  tokens.
+- Turns early EOS into a terminal leaf with the correct remaining nominal slot count.
+- Creates `RolloutTree`, `Edge`, `Node`, and `Leaf` records ready for
+  `materialize_leaf_slot_paths`.
+
+Added local fake-runtime validation:
+
+```bash
+PYTHONPATH=python python3 benchmark/validate_branch_rollout_builder.py
+```
+
+Result: passed with 7 nodes, 6 edges, 4 leaves, root weights `[2, 2]`, rewards
+`[0.0, 0.0, 1.0, 1.0]`, and 4 materialized training examples.
