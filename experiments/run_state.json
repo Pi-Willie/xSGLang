@@ -1,6 +1,6 @@
 {
   "active_run_id": null,
-  "phase": "phase1_rollout_builder_ready_h100_unavailable",
+  "phase": "phase1_trainer_step_ready_h100_unavailable",
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
@@ -15,6 +15,8 @@
     "benchmark/validate_runtime_logprobs.py",
     "python/minisgl/branch_grpo/rollout.py",
     "benchmark/validate_branch_rollout_builder.py",
+    "python/minisgl/branch_grpo/trainer.py",
+    "benchmark/validate_branch_trainer_step.py",
     "experiments/phase0/env_versions.json",
     "experiments/phase0/qwen4b_branch_scaling_gate.json",
     "experiments/phase0/qwen4b_weight_refresh_gate.json"
@@ -25,6 +27,7 @@
     "goal.txt forbids flat GRPO despite plan.txt section 19 listing a flat baseline.",
     "OpenR1 training prompts are streamed and filtered online; do not materialize the full train split.",
     "xsglang runtime logprobs are selected-token old logprobs aligned to emitted_token_ids; run benchmark/validate_runtime_logprobs.py on H100 before RL.",
-    "Branch-GRPO rollout trees are built by python/minisgl/branch_grpo/rollout.py and locally validated with benchmark/validate_branch_rollout_builder.py."
+    "Branch-GRPO rollout trees are built by python/minisgl/branch_grpo/rollout.py and locally validated with benchmark/validate_branch_rollout_builder.py.",
+    "Trainer-side exact selected-logprob gather, constant-denominator accumulation, and FP32 master AdamW are in python/minisgl/branch_grpo/trainer.py and locally validated with benchmark/validate_branch_trainer_step.py."
   ]
 }

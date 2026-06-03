@@ -324,3 +324,35 @@ PYTHONPATH=python python3 benchmark/validate_branch_rollout_builder.py
 
 Result: passed with 7 nodes, 6 edges, 4 leaves, root weights `[2, 2]`, rewards
 `[0.0, 0.0, 1.0, 1.0]`, and 4 materialized training examples.
+
+## 2026-06-03 - Trainer-side Branch-GRPO step scaffold
+
+Added `python/minisgl/branch_grpo/trainer.py`:
+
+- Packs complete leaf-slot paths by total token budget.
+- Collates dynamic microbatches with no loss on prompt/pad tokens.
+- Computes exact selected response-token logprobs from the trainer model using the causal
+  `position - 1 -> token` gather.
+- Accumulates microbatch losses with the global constant denominator; no division by response
+  length, generated-token count, microbatch count, or nonzero token count.
+- Adds `FP32MasterAdamW`, which copies trainer gradients to FP32 master parameters, steps AdamW
+  on those masters, then refreshes model parameters from FP32.
+
+Added CPU toy-model validation:
+
+```bash
+PYTHONPATH=python python3 benchmark/validate_branch_trainer_step.py
+```
+
+Result:
+
+- Max selected-logprob diff against manual gather: `0.0`.
+- Denominator: `262144`.
+- Microbatches: `2`.
+- Response tokens: `7`; weighted response tokens: `8.0`.
+- Nonzero weighted tokens: `8.0`.
+- Grad norm: `3.0134873668430373e-05`.
+- Max parameter delta after mixed-advantage update: `0.049953848123550415`.
+- Optimizer steps: `1`.
+- FP32 master/model max diff after refresh: `0.0`.
+- Fresh zero-advantage update parameter delta: `0.0`.
