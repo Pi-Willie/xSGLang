@@ -79,9 +79,13 @@ def build_loop(args: argparse.Namespace) -> BranchGRPOLoop:
     )
 
 
-def prompt_batches(heldout_path: Path, total_prompts: int, per_update: int):
+def prompt_batches(heldout_path: Path, total_prompts: int, per_update: int, skip_prompts: int = 0):
     rows, batch = [], []
+    seen = 0
     for row in iter_openr1_train_rows(heldout_path=heldout_path if heldout_path.exists() else None):
+        seen += 1
+        if seen <= skip_prompts:  # deterministic skip of already-consumed prompts on resume
+            continue
         batch.append(row)
         if len(batch) == per_update:
             rows.append(batch)
@@ -177,7 +181,8 @@ def _finite(x: float) -> bool:
     return x == x and abs(x) != float("inf")
 
 
-def run_training(loop: BranchGRPOLoop, args: argparse.Namespace, out: Path) -> None:
+def run_training(loop: BranchGRPOLoop, args: argparse.Namespace, out: Path,
+                 start_update: int = 0, best_acc: float = -1.0) -> None:
     cfg = loop.config
     out.mkdir(parents=True, exist_ok=True)
     metrics_fp = (out / "metrics.jsonl").open("a")
@@ -187,11 +192,13 @@ def run_training(loop: BranchGRPOLoop, args: argparse.Namespace, out: Path) -> N
 
     init_parity = loop.parity_probe(PROBE_PROMPT, n_tokens=24)
     (out / "init_parity.json").write_text(json.dumps(init_parity, indent=2))
-    print(f"[init] parity mean={init_parity['mean_abs_diff']:.4f} max={init_parity['max_abs_diff']:.4f}", flush=True)
+    print(f"[init u{start_update}] parity mean={init_parity['mean_abs_diff']:.4f} max={init_parity['max_abs_diff']:.4f}", flush=True)
 
-    best_acc = -1.0
-    batches = prompt_batches(heldout, cfg.prompts_per_update * args.updates, cfg.prompts_per_update)
-    for uid, batch in enumerate(batches):
+    remaining = args.updates - start_update
+    batches = prompt_batches(heldout, cfg.prompts_per_update * remaining, cfg.prompts_per_update,
+                             skip_prompts=cfg.prompts_per_update * start_update)
+    for i, batch in enumerate(batches):
+        uid = start_update + i
         m = loop.run_update(uid, batch)
         metrics_fp.write(json.dumps(m.to_json()) + "\n"); metrics_fp.flush()
         if uid % args.log_every == 0:
@@ -209,9 +216,20 @@ def run_training(loop: BranchGRPOLoop, args: argparse.Namespace, out: Path) -> N
                 best_acc = ev["greedy_accuracy"]
                 _save_checkpoint(loop, out / "best_model", uid, ev)
         if args.checkpoint_every and uid > 0 and uid % args.checkpoint_every == 0:
-            _save_run_state(out, uid, best_acc)
+            _save_last(loop, out, uid + 1, best_acc)
     metrics_fp.close(); eval_fp.close()
-    _save_run_state(out, len(batches), best_acc)
+    _save_last(loop, out, start_update + len(batches), best_acc)
+    print(f"[done] reached update {start_update + len(batches)} best_acc={best_acc:.3f}", flush=True)
+
+
+def _save_last(loop: BranchGRPOLoop, out: Path, next_update: int, best_acc: float) -> None:
+    """Cheap resume checkpoint: model weights + run state (Adam reinit on resume; OK at lr 1e-6)."""
+    path = out / "last_model"
+    path.mkdir(parents=True, exist_ok=True)
+    loop.model.save_pretrained(path, safe_serialization=True)
+    loop.llm.tokenizer.save_pretrained(path)
+    _save_run_state(out, next_update, best_acc)
+    print(f"[ckpt] saved last_model, next_update={next_update}", flush=True)
 
 
 def _save_checkpoint(loop: BranchGRPOLoop, path: Path, uid: int, ev: dict[str, Any]) -> None:
@@ -222,9 +240,9 @@ def _save_checkpoint(loop: BranchGRPOLoop, path: Path, uid: int, ev: dict[str, A
     print(f"[ckpt] saved best model @ u{uid} acc={ev['greedy_accuracy']:.3f}", flush=True)
 
 
-def _save_run_state(out: Path, uid: int, best_acc: float) -> None:
+def _save_run_state(out: Path, next_update: int, best_acc: float) -> None:
     (out / "run_state.json").write_text(json.dumps(
-        {"last_update": uid, "best_greedy_acc": best_acc, "ts": time.time()}, indent=2))
+        {"next_update": next_update, "best_greedy_acc": best_acc, "ts": time.time()}, indent=2))
 
 
 def parse_args() -> argparse.Namespace:
@@ -245,6 +263,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cuda-graph-max-bs", type=int, default=128)
     p.add_argument("--attn-implementation", default="sdpa")
     p.add_argument("--use-xsglang-old-logprobs", action="store_true")
+    p.add_argument("--resume", action="store_true", help="resume from <output-dir>/last_model + run_state")
     p.add_argument("--parity-mean-max", type=float, default=0.05)
     p.add_argument("--parity-max-max", type=float, default=0.3)
     p.add_argument("--mem-growth-gb", type=float, default=3.0)
@@ -253,12 +272,24 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    loop = build_loop(args)
     out = Path(args.output_dir)
+    start_update, best_acc = 0, -1.0
+    if args.resume:
+        last_model = out / "last_model"
+        state_fp = out / "run_state.json"
+        if last_model.exists() and state_fp.exists():
+            st = json.loads(state_fp.read_text())
+            start_update = int(st.get("next_update", 0))
+            best_acc = float(st.get("best_greedy_acc", -1.0))
+            args.model = str(last_model)  # reload trainer + xsglang from the resumed weights
+            print(f"[resume] from {last_model} at update {start_update} best_acc={best_acc:.3f}", flush=True)
+        else:
+            print("[resume] no checkpoint found; starting fresh", flush=True)
+    loop = build_loop(args)
     if args.health_gate:
         run_health_gate(loop, args, out)
     else:
-        run_training(loop, args, out)
+        run_training(loop, args, out, start_update=start_update, best_acc=best_acc)
 
 
 if __name__ == "__main__":
