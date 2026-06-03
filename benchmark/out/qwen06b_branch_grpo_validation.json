@@ -1,0 +1,68 @@
+{
+  "model": "Qwen/Qwen3-0.6B",
+  "resolved_model_path": "/home/wilhelmhedenskog/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca",
+  "prompt": "Answer with one short word. Continue:",
+  "target_text": " yes",
+  "reject_text": " no",
+  "before_tokens": [
+    279,
+    1372,
+    315,
+    1251,
+    879,
+    614
+  ],
+  "branch_records": [
+    {
+      "label": "target",
+      "token_id": 9834,
+      "reward": 1.0,
+      "advantage": 1.0
+    },
+    {
+      "label": "reject",
+      "token_id": 902,
+      "reward": 0.0,
+      "advantage": -1.0
+    }
+  ],
+  "train": {
+    "trained_dir": "/tmp/xsglang-branch-grpo-puyqiwui/trained_branch_grpo_step",
+    "target_id": 9834,
+    "reject_id": 902,
+    "before_logprobs": {
+      "9834": -8.590310096740723,
+      "902": -7.777810096740723
+    },
+    "after_logprobs": {
+      "9834": 0.0,
+      "902": -107.5
+    },
+    "target_logprob_improved": true,
+    "reject_logprob_decreased": true,
+    "loss": 0.40625
+  },
+  "refresh": {
+    "model_path": "/tmp/xsglang-branch-grpo-puyqiwui/trained_branch_grpo_step",
+    "resolved_model_path": "/tmp/xsglang-branch-grpo-puyqiwui/trained_branch_grpo_step",
+    "elapsed_ms": 289.4975870003691,
+    "preserved_adapter": null,
+    "released_continuations": 0
+  },
+  "after_tokens": [
+    9834,
+    9834,
+    9834,
+    9834,
+    9834,
+    9834
+  ],
+  "checks": {
+    "branch_rewards_nonzero": true,
+    "branch_advantages_mixed": true,
+    "target_logprob_improved": true,
+    "reject_logprob_decreased": true,
+    "output_changed": true
+  },
+  "passed": true
+}

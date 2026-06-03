@@ -143,6 +143,15 @@ class CacheManager:
         if self.page_size > 1:
             assert torch.all(self.free_slots % self.page_size == 0)
 
+    def reset(self) -> None:
+        self.free_slots = torch.arange(
+            self.num_pages,
+            dtype=torch.int32,
+            device=self.device,
+        ) * self.page_size
+        self.prefix_cache.reset()
+        self._tracked_page_refs.clear()
+
     @contextmanager
     def lazy_free_region(self):
         def lazy_free(indices: torch.Tensor) -> None:
@@ -196,13 +205,15 @@ class CacheManager:
         indices = self.page_table[req.table_idx, :length]
         return self._indices_to_page_starts(indices)
 
-    def track_fork_from_state(self, req: Req) -> None:
+    def track_fork_from_state(self, req: Req, *, child_refs: int = 1) -> None:
+        if child_refs <= 0:
+            return
         for page_start in self.state_page_starts(req):
             if page_start in self._tracked_page_refs:
-                self._tracked_page_refs[page_start] += 1
+                self._tracked_page_refs[page_start] += child_refs
             else:
                 # Parent + child references.
-                self._tracked_page_refs[page_start] = 2
+                self._tracked_page_refs[page_start] = child_refs + 1
 
     def track_clone_page_starts(self, page_starts: Iterable[int]) -> None:
         for page_start in page_starts:

@@ -3,26 +3,38 @@ from __future__ import annotations
 import copy
 import time
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, NoReturn, Sequence, Set, Tuple, TypeAlias
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    NoReturn,
+    Sequence,
+    Set,
+    Tuple,
+    TypeAlias,
+)
 
 import torch
 from minisgl.core import (
+    DEFAULT_ENGINE_CAP_MASK,
+    OUTPUT_HOOK_OUTPUTS,
+    OUTPUT_TEXT,
+    OUTPUT_TOKENS,
+    OUTPUT_TOPK_IDS,
+    OUTPUT_TOPK_LOGPROBS,
     Batch,
     BlockResult,
     BlockSpec,
     ChildContinuationSpec,
-    ContinuationCapability,
     ContinuationBlockResult,
+    ContinuationCapability,
     ContinuationInspection,
     ContinuationStatus,
-    DEFAULT_ENGINE_CAP_MASK,
     ExecutionLane,
     HookProgram,
-    OUTPUT_HOOK_OUTPUTS,
-    OUTPUT_TEXT,
-    OUTPUT_TOPK_IDS,
-    OUTPUT_TOPK_LOGPROBS,
-    OUTPUT_TOKENS,
     Req,
     Session,
     StepPhase,
@@ -34,9 +46,9 @@ from minisgl.core import (
 from minisgl.distributed import get_tp_info
 from minisgl.env import ENV
 from minisgl.message import (
+    AbortBackendMsg,
     AdapterBackendControlMsg,
     AdapterResultMsg,
-    AbortBackendMsg,
     BaseBackendMsg,
     BatchBackendMsg,
     DetokenizeMsg,
@@ -231,6 +243,77 @@ class Scheduler(SchedulerIOMixin):
         self.sync_all_ranks()
         self.engine.shutdown()
 
+    def reset_runtime_state(self) -> int:
+        released = len(self._state_registry) + len(self.prefill_manager.pending_list)
+        for req in list(self._state_registry.values()):
+            req.status = ContinuationStatus.FREED
+        for pending in self.prefill_manager.pending_list:
+            chunked = pending.chunked_req
+            if chunked is not None:
+                chunked.status = ContinuationStatus.FREED
+
+        self.finished_reqs.clear()
+        self.prefill_manager.pending_list.clear()
+        self.decode_manager.running_reqs.clear()
+        self._state_registry.clear()
+        self._continuation_registry.clear()
+        self._session_members.clear()
+        self._session_metadata.clear()
+        self.table_manager.reset()
+        self.cache_manager.reset()
+        if self.engine.state_cache is not None:
+            if hasattr(self.engine.state_cache, "reset_all"):
+                self.engine.state_cache.reset_all()
+            else:
+                for table_idx in range(self.table_manager.max_running_reqs):
+                    self.engine.state_cache.reset_row(table_idx)
+        return released
+
+    def refresh_model_weights(
+        self,
+        model_path: str | None = None,
+        *,
+        preserve_adapter: bool = True,
+    ) -> Dict[str, Any]:
+        torch.cuda.synchronize(self.device)
+        self.sync_all_ranks()
+        released = self.reset_runtime_state()
+        result = self.engine.reload_weights(
+            model_path=model_path,
+            preserve_adapter=preserve_adapter,
+        )
+        self.tokenizer = load_tokenizer(self.engine.config.tokenizer_path)
+        self.eos_token_id = self.tokenizer.eos_token_id
+        return {
+            "model_path": result.model_path,
+            "resolved_model_path": result.resolved_model_path,
+            "elapsed_ms": result.elapsed_ms,
+            "preserved_adapter": result.preserved_adapter,
+            "released_continuations": released,
+        }
+
+    def refresh_model_weights_from_state_dict(
+        self,
+        state_dict: Mapping[str, torch.Tensor],
+        *,
+        source: str = "state_dict",
+        preserve_adapter: bool = True,
+    ) -> Dict[str, Any]:
+        torch.cuda.synchronize(self.device)
+        self.sync_all_ranks()
+        released = self.reset_runtime_state()
+        result = self.engine.update_weights_from_state_dict(
+            state_dict,
+            source=source,
+            preserve_adapter=preserve_adapter,
+        )
+        return {
+            "source": result.source,
+            "elapsed_ms": result.elapsed_ms,
+            "preserved_adapter": result.preserved_adapter,
+            "released_continuations": released,
+        }
+
     def _next_uid(self) -> int:
         uid = self._next_internal_uid
         self._next_internal_uid -= 1
@@ -337,7 +420,7 @@ class Scheduler(SchedulerIOMixin):
             required |= int(ContinuationCapability.READ_HOOKS)
         if has_writes or has_logit_processors or forced_next_tokens is not None:
             required |= int(ContinuationCapability.WRITE_HOOKS)
-        if outputs.runtime_outputs or outputs.model_outputs:
+        if self._outputs_need_extra_capability(outputs):
             required |= int(
                 ContinuationCapability.EXTRA_OUTPUTS | ContinuationCapability.DEBUG_INTROSPECTION
             )
@@ -409,6 +492,16 @@ class Scheduler(SchedulerIOMixin):
         if missing:
             raise RuntimeError(f"Block {block.block_id} block_cap_mask forbids capabilities 0x{missing:x}")
 
+    @staticmethod
+    def _outputs_need_extra_capability(outputs: _ResolvedOutputRequest) -> bool:
+        if outputs.model_outputs or outputs.topk_k > 0:
+            return True
+        return any(name == OUTPUT_HOOK_OUTPUTS for name in outputs.runtime_outputs)
+
+    @staticmethod
+    def _outputs_need_extended_lane(outputs: _ResolvedOutputRequest) -> bool:
+        return bool(outputs.model_outputs or outputs.topk_k > 0)
+
     def _compile_step_plan(
         self,
         *,
@@ -428,7 +521,7 @@ class Scheduler(SchedulerIOMixin):
 
         if forced_next_tokens is not None or has_writes or has_logit_processors:
             lane = ExecutionLane.INTERVENTION
-        elif has_hooks or outputs.runtime_outputs or outputs.model_outputs:
+        elif has_hooks or self._outputs_need_extended_lane(outputs):
             lane = ExecutionLane.EXTENDED_READ
         else:
             lane = ExecutionLane.PLAIN
@@ -1043,10 +1136,27 @@ class Scheduler(SchedulerIOMixin):
         child_specs: Sequence[ChildContinuationSpec],
     ) -> List[Req]:
         parent_req = self.resolve_continuation(parent)
+        if len(child_specs) == 0:
+            return []
+        if self.table_manager.available_size < len(child_specs):
+            raise RuntimeError("No free table slots left for fork")
+
+        table_idxs = self.table_manager.allocate_many(len(child_specs))
+        self._copy_fork_rows(parent_req, table_idxs)
+        if self.engine.state_cache is not None and hasattr(self.engine.state_cache, "copy_rows"):
+            self.engine.state_cache.copy_rows(parent_req.table_idx, table_idxs)
+        elif self.engine.state_cache is not None:
+            for table_idx in table_idxs:
+                self.engine.state_cache.copy_row(parent_req.table_idx, table_idx)
+
+        for _ in table_idxs:
+            self.cache_manager.lock(parent_req.cache_handle)
+        self.cache_manager.track_fork_from_state(parent_req, child_refs=len(table_idxs))
+
         children: List[Req] = []
         forced_groups: Dict[str | None, List[Tuple[Req, int]]] = {}
-        for child_spec in child_specs:
-            child = self.fork_state(parent_req, add_to_scheduler=False, snapshot=False)
+        for table_idx, child_spec in zip(table_idxs, child_specs):
+            child = self._new_forked_state(parent_req, table_idx=table_idx, snapshot=False)
             child.status = ContinuationStatus.PAUSED
             child.parent_id = parent_req.continuation_id
             child.session_id = parent_req.session_id
@@ -1067,6 +1177,8 @@ class Scheduler(SchedulerIOMixin):
                     (child, int(child_spec.forced_first_token))
                 )
             children.append(child)
+            self._register_state(child)
+        parent_req.cow_active = True
         for adapter_id, grouped in forced_groups.items():
             continuation_ids = tuple(child.continuation_id for child, _ in grouped)
             forced_tokens = torch.tensor(
@@ -1087,30 +1199,33 @@ class Scheduler(SchedulerIOMixin):
     def free_continuation(self, continuation: Req | int) -> None:
         self.dispose_state(self.resolve_continuation(continuation))
 
-    def fork_state(self, state: Req, *, add_to_scheduler: bool, snapshot: bool) -> Req:
-        if state._runtime is not self:
-            raise RuntimeError("State does not belong to this scheduler")
-        if state.state_id not in self._state_registry:
-            raise RuntimeError("State is no longer active")
-        if self.table_manager.available_size == 0:
-            raise RuntimeError("No free table slots left for fork")
+    def _fork_map_limit(self, limit: int) -> int:
+        page_size = self.cache_manager.page_size
+        map_limit = ((limit + page_size - 1) // page_size) * page_size
+        return min(map_limit, self.engine.page_table.shape[1])
 
-        table_idx = self.table_manager.allocate()
+    def _copy_fork_rows(self, state: Req, table_idxs: Sequence[int]) -> None:
+        if len(table_idxs) == 0:
+            return
+        row_index = torch.tensor(table_idxs, dtype=torch.int64, device=self.device)
         limit = state.device_len
-        self.token_pool[table_idx, :limit].copy_(self.token_pool[state.table_idx, :limit])
+        if limit > 0:
+            token_src = self.token_pool[state.table_idx : state.table_idx + 1, :limit].expand(
+                len(table_idxs), limit
+            )
+            self.token_pool[:, :limit].index_copy_(0, row_index, token_src)
+
         # Page table entries are allocated per-page. Copying only `:limit` can leave
         # future positions in the current page unmapped in the child row, which then
         # corrupts subsequent decode reads/writes after fork.
-        page_size = self.cache_manager.page_size
-        map_limit = ((limit + page_size - 1) // page_size) * page_size
-        map_limit = min(map_limit, self.engine.page_table.shape[1])
+        map_limit = self._fork_map_limit(limit)
         if map_limit > 0:
-            self.engine.page_table[table_idx, :map_limit].copy_(
-                self.engine.page_table[state.table_idx, :map_limit]
-            )
-        if self.engine.state_cache is not None:
-            self.engine.state_cache.copy_row(state.table_idx, table_idx)
+            page_src = self.engine.page_table[
+                state.table_idx : state.table_idx + 1, :map_limit
+            ].expand(len(table_idxs), map_limit)
+            self.engine.page_table[:, :map_limit].index_copy_(0, row_index, page_src)
 
+    def _new_forked_state(self, state: Req, *, table_idx: int, snapshot: bool) -> Req:
         metadata = {
             "created_at": time.time(),
             "parent_state_id": state.state_id,
@@ -1165,6 +1280,22 @@ class Scheduler(SchedulerIOMixin):
         child.cow_active = True
         child.metadata["lineage"] = list(state.metadata.get("lineage", [])) + [child.state_id]
         child.metadata["cow_epoch"] = int(state.metadata.get("cow_epoch", 0)) + 1
+        return child
+
+    def fork_state(self, state: Req, *, add_to_scheduler: bool, snapshot: bool) -> Req:
+        if state._runtime is not self:
+            raise RuntimeError("State does not belong to this scheduler")
+        if state.state_id not in self._state_registry:
+            raise RuntimeError("State is no longer active")
+        if self.table_manager.available_size == 0:
+            raise RuntimeError("No free table slots left for fork")
+
+        table_idx = self.table_manager.allocate()
+        self._copy_fork_rows(state, [table_idx])
+        if self.engine.state_cache is not None:
+            self.engine.state_cache.copy_row(state.table_idx, table_idx)
+
+        child = self._new_forked_state(state, table_idx=table_idx, snapshot=snapshot)
         state.cow_active = True
 
         self.cache_manager.lock(state.cache_handle)

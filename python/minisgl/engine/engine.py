@@ -1,16 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import timedelta
+import gc
 import os
-from pathlib import Path
 import tempfile
-from typing import Any, Dict, Tuple
+import time
+from dataclasses import dataclass, field, replace
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Dict, Mapping, Tuple
 
 import torch
 from minisgl.attention import create_attention_backend
 from minisgl.core import Batch, Context, Req, clear_global_ctx, set_global_ctx
-from minisgl.distributed import destroy_distributed, enable_pynccl_distributed, reset_tp_info, set_tp_info
+from minisgl.distributed import (
+    destroy_distributed,
+    enable_pynccl_distributed,
+    reset_tp_info,
+    set_tp_info,
+)
 from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight
@@ -48,6 +55,21 @@ class ForwardOutput:
     topk_logprobs_cpu: torch.Tensor | None = None
 
 
+@dataclass(frozen=True)
+class WeightReloadResult:
+    model_path: str
+    resolved_model_path: str
+    elapsed_ms: float
+    preserved_adapter: str | None
+
+
+@dataclass(frozen=True)
+class WeightUpdateResult:
+    source: str
+    elapsed_ms: float
+    preserved_adapter: str | None
+
+
 class Engine:
     def __init__(self, config: EngineConfig):
         _ensure_runtime_cache_dirs()
@@ -60,6 +82,7 @@ class Engine:
             logger.debug("CUDA already initialized before Engine startup.")
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         _adjust_config(config)
+        self.config = config
 
         self.device = torch.device(f"cuda:{config.tp_info.rank}")
         torch.cuda.set_device(self.device)
@@ -205,6 +228,121 @@ class Engine:
                 k: v.to(self.dtype)
                 for k, v in load_weight(config.resolved_model_path, self.device).items()
             }
+
+    def _copy_state_dict_into_model(
+        self,
+        state_dict: Mapping[str, torch.Tensor],
+        *,
+        model_config=None,
+    ) -> None:
+        new_state_dict = dict(state_dict)
+        current_state_dict = self.model.state_dict()
+        effective_model_config = model_config or self.config.model_config
+        if effective_model_config.tie_word_embeddings:
+            new_state_dict.pop("lm_head.weight", None)
+            new_state_dict.pop("lm_head.bias", None)
+        missing = sorted(set(current_state_dict) - set(new_state_dict))
+        unexpected = sorted(set(new_state_dict) - set(current_state_dict))
+        if missing or unexpected:
+            raise RuntimeError(
+                "Reload checkpoint does not match the current model:"
+                f" missing={missing[:8]} unexpected={unexpected[:8]}"
+            )
+
+        with torch.no_grad():
+            for name, target in current_state_dict.items():
+                source = new_state_dict.pop(name)
+                if target.shape != source.shape:
+                    raise RuntimeError(
+                        f"Reload tensor shape mismatch for {name}:"
+                        f" current={tuple(target.shape)} new={tuple(source.shape)}"
+                    )
+                target.copy_(source.to(device=target.device, dtype=target.dtype, non_blocking=True))
+        del new_state_dict
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    def _copy_weight_state_dict(self, config: EngineConfig) -> None:
+        self._copy_state_dict_into_model(
+            self._load_weight_state_dict(config),
+            model_config=config.model_config,
+        )
+
+    def _unload_active_adapter(self) -> str | None:
+        active_adapter = self.lora_manager.active_adapter
+        if active_adapter is not None:
+            self.lora_manager.unload()
+        return active_adapter
+
+    def _rebuild_lora_manager(self, config: EngineConfig, active_adapter: str | None, *, preserve: bool) -> str | None:
+        self.lora_manager = LoRAManager(
+            model=self.model,
+            model_config=config.model_config,
+            base_model_path=config.resolved_model_path,
+        )
+        if preserve and active_adapter is not None:
+            return self.lora_manager.load(active_adapter)
+        return None
+
+    def reload_weights(
+        self,
+        model_path: str | None = None,
+        *,
+        preserve_adapter: bool = True,
+    ) -> WeightReloadResult:
+        target_model_path = model_path or self.config.model_path
+        new_config = replace(self.config, model_path=target_model_path, lora_path=None)
+        if new_config.model_config != self.config.model_config:
+            raise RuntimeError(
+                "In-place model reload requires the same architecture, tokenizer size, and "
+                "runtime dimensions. Restart the engine for architecture-changing checkpoints."
+            )
+
+        active_adapter = self._unload_active_adapter()
+
+        torch.cuda.synchronize(self.device)
+        started = time.perf_counter()
+        self._copy_weight_state_dict(new_config)
+        torch.cuda.synchronize(self.device)
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+        self.config = new_config
+        preserved_adapter = self._rebuild_lora_manager(
+            new_config,
+            active_adapter,
+            preserve=preserve_adapter,
+        )
+
+        return WeightReloadResult(
+            model_path=target_model_path,
+            resolved_model_path=new_config.resolved_model_path,
+            elapsed_ms=elapsed_ms,
+            preserved_adapter=preserved_adapter,
+        )
+
+    def update_weights_from_state_dict(
+        self,
+        state_dict: Mapping[str, torch.Tensor],
+        *,
+        source: str = "state_dict",
+        preserve_adapter: bool = True,
+    ) -> WeightUpdateResult:
+        active_adapter = self._unload_active_adapter()
+        torch.cuda.synchronize(self.device)
+        started = time.perf_counter()
+        self._copy_state_dict_into_model(state_dict)
+        torch.cuda.synchronize(self.device)
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        preserved_adapter = self._rebuild_lora_manager(
+            self.config,
+            active_adapter,
+            preserve=preserve_adapter,
+        )
+        return WeightUpdateResult(
+            source=source,
+            elapsed_ms=elapsed_ms,
+            preserved_adapter=preserved_adapter,
+        )
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
         new_free_memory = self._sync_get_memory()[1]
