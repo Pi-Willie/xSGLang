@@ -13,6 +13,7 @@ from minisgl.core import (
     ContinuationCapability,
     HookProgram,
     OUTPUT_HOOK_OUTPUTS,
+    OUTPUT_LOGPROBS,
     OUTPUT_TEXT,
     OUTPUT_TOKENS,
     Req,
@@ -97,7 +98,14 @@ class LLM(Scheduler):
     def available_outputs(self) -> tuple[str, ...]:
         return (
             self.engine.model.available_sample_output_names()
-            + (OUTPUT_TOKENS, OUTPUT_TEXT, "topk_ids", "topk_logprobs", OUTPUT_HOOK_OUTPUTS)
+            + (
+                OUTPUT_TOKENS,
+                OUTPUT_TEXT,
+                OUTPUT_LOGPROBS,
+                "topk_ids",
+                "topk_logprobs",
+                OUTPUT_HOOK_OUTPUTS,
+            )
         )
 
     def _tokenize_one(self, prompt: List[int] | str) -> torch.Tensor:

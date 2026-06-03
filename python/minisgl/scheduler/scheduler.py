@@ -21,6 +21,7 @@ import torch
 from minisgl.core import (
     DEFAULT_ENGINE_CAP_MASK,
     OUTPUT_HOOK_OUTPUTS,
+    OUTPUT_LOGPROBS,
     OUTPUT_TEXT,
     OUTPUT_TOKENS,
     OUTPUT_TOPK_IDS,
@@ -494,7 +495,7 @@ class Scheduler(SchedulerIOMixin):
 
     @staticmethod
     def _outputs_need_extra_capability(outputs: _ResolvedOutputRequest) -> bool:
-        if outputs.model_outputs or outputs.topk_k > 0:
+        if outputs.model_outputs or outputs.topk_k > 0 or OUTPUT_LOGPROBS in outputs.runtime_outputs:
             return True
         return any(name == OUTPUT_HOOK_OUTPUTS for name in outputs.runtime_outputs)
 
@@ -967,6 +968,7 @@ class Scheduler(SchedulerIOMixin):
         )
 
         emitted: Dict[int, List[int]] = {req.continuation_id: [] for req in reqs}
+        wants_logprobs = OUTPUT_LOGPROBS in base_plan.runtime_outputs
         wants_topk_logprobs = any(
             name == OUTPUT_TOPK_LOGPROBS or name.startswith(f"{OUTPUT_TOPK_LOGPROBS}:")
             for name in base_plan.runtime_outputs
@@ -983,6 +985,11 @@ class Scheduler(SchedulerIOMixin):
         topk_logprobs_hist = (
             {req.continuation_id: [] for req in reqs}
             if wants_topk_logprobs
+            else None
+        )
+        logprobs_hist = (
+            {req.continuation_id: [] for req in reqs}
+            if wants_logprobs
             else None
         )
         stop_reasons: Dict[int, str | None] = {req.continuation_id: None for req in reqs}
@@ -1032,6 +1039,10 @@ class Scheduler(SchedulerIOMixin):
                     ):
                         topk_logprobs_hist[req.continuation_id].append(
                             forward_output.topk_logprobs_cpu[batch_idx].clone()
+                        )
+                    if logprobs_hist is not None and forward_output.logprobs_cpu is not None:
+                        logprobs_hist[req.continuation_id].append(
+                            forward_output.logprobs_cpu[batch_idx].clone()
                         )
                     if block.stop_strings:
                         live_text[req.continuation_id] = self._build_block_text(
@@ -1101,6 +1112,11 @@ class Scheduler(SchedulerIOMixin):
                 if topk_logprobs_hist is not None and topk_logprobs_hist[continuation_id]
                 else None
             )
+            logprobs = (
+                torch.stack(logprobs_hist[continuation_id])
+                if logprobs_hist is not None and logprobs_hist[continuation_id]
+                else None
+            )
             results.append(
                 ContinuationBlockResult(
                     continuation_id=continuation_id,
@@ -1116,6 +1132,7 @@ class Scheduler(SchedulerIOMixin):
                     stop_reason=stop_reasons[continuation_id],
                     topk_ids=topk_ids,
                     topk_logprobs=topk_logprobs,
+                    logprobs=logprobs,
                     hidden=hidden,
                     hook_outputs=hook_outputs,
                 )

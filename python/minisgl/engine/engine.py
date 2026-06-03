@@ -53,6 +53,7 @@ class ForwardOutput:
     sample_outputs_cpu: Dict[str, torch.Tensor] = field(default_factory=dict)
     topk_ids_cpu: torch.Tensor | None = None
     topk_logprobs_cpu: torch.Tensor | None = None
+    logprobs_cpu: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -411,18 +412,21 @@ class Engine:
         }
         topk_ids_cpu = None
         topk_logprobs_cpu = None
+        logprobs_cpu = None
+        active_logits = logits[: batch.size]
+        active_logprobs = None
         if batch.requested_topk_k > 0:
-            topk_source = logits[: batch.size]
             if batch.requested_topk_logprobs:
+                active_logprobs = torch.log_softmax(active_logits.float(), dim=-1)
                 topk_logprobs, topk_ids = torch.topk(
-                    torch.log_softmax(topk_source.float(), dim=-1),
+                    active_logprobs,
                     k=batch.requested_topk_k,
                     dim=-1,
                 )
                 topk_ids_cpu = topk_ids.to("cpu", non_blocking=True)
                 topk_logprobs_cpu = topk_logprobs.to("cpu", non_blocking=True)
             elif batch.requested_topk_ids:
-                topk_ids = torch.topk(topk_source, k=batch.requested_topk_k, dim=-1).indices
+                topk_ids = torch.topk(active_logits, k=batch.requested_topk_k, dim=-1).indices
                 topk_ids_cpu = topk_ids.to("cpu", non_blocking=True)
 
         next_tokens_gpu = None
@@ -430,7 +434,15 @@ class Engine:
         if batch.sample_next_token:
             for req in batch.reqs:
                 req.complete_one()
-            next_tokens_gpu = self.sampler.sample(logits[: batch.size], args).to(torch.int32)
+            next_tokens_gpu = self.sampler.sample(active_logits, args).to(torch.int32)
+            if batch.requested_logprobs:
+                if active_logprobs is None:
+                    active_logprobs = torch.log_softmax(active_logits.float(), dim=-1)
+                selected = next_tokens_gpu.to(torch.long).view(-1, 1)
+                logprobs_cpu = active_logprobs.gather(dim=-1, index=selected).view(-1).to(
+                    "cpu",
+                    non_blocking=True,
+                )
             next_tokens_cpu = next_tokens_gpu.to("cpu", non_blocking=True)
         elif batch.is_prefill:
             # Prefill-only blocks warm the KV cache without consuming the first decode slot.
@@ -445,6 +457,7 @@ class Engine:
             sample_outputs_cpu=sample_outputs_cpu,
             topk_ids_cpu=topk_ids_cpu,
             topk_logprobs_cpu=topk_logprobs_cpu,
+            logprobs_cpu=logprobs_cpu,
             copy_done_event=copy_done_event,
         )
 

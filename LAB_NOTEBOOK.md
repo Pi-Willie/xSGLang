@@ -240,3 +240,49 @@ Next gates:
 2. Install or make a logged decision about FlashAttention for trainer mode.
 3. Run SFT on Qwen3-4B Base with `experiments/scripts/sft_qwen3_math.py`, then mirror the
    standalone SFT artifact locally.
+
+## 2026-06-03 - Streaming train data and selected-token logprobs
+
+Confirmed the user correction: OpenR1 train must be streamed and filtered online during RL. The
+repo keeps only the fixed held-out eval JSONL; there is no materialized OpenR1 train JSONL under
+`experiments/data`.
+
+Added a first-class xsglang runtime output:
+
+- `OUTPUT_LOGPROBS = "logprobs"`.
+- `ContinuationBlockResult.logprobs` is a 1-D tensor aligned with `emitted_token_ids`.
+- The engine computes `log_softmax(logits)` and gathers only the emitted sampled/forced token id
+  when `logprobs` is requested.
+- Top-k logprob computation and selected-token logprob computation share the same log-softmax when
+  both are requested.
+
+This is required for Branch-GRPO old-logprob records. Top-k logprobs are insufficient because a
+sampled token is not guaranteed to be in a small top-k set.
+
+Local validation:
+
+```bash
+PYTHONPATH=python python3 -m py_compile \
+  python/minisgl/core.py \
+  python/minisgl/engine/engine.py \
+  python/minisgl/scheduler/scheduler.py \
+  python/minisgl/llm/llm.py \
+  benchmark/validate_runtime_logprobs.py \
+  benchmark/validate_branch_grpo_core.py
+
+PYTHONPATH=python python3 benchmark/validate_branch_grpo_core.py
+```
+
+Both passed locally. The new H100 parity gate is:
+
+```bash
+PYTHONPATH=python python benchmark/validate_runtime_logprobs.py \
+  --model Qwen/Qwen3-4B \
+  --json-output experiments/phase0/qwen4b_runtime_logprobs_gate.json \
+  --memory-ratio 0.25 \
+  --max-running-req 16 \
+  --tokens 8
+```
+
+That gate compares xsglang selected-token logprobs with HF teacher-forced logprobs for the same
+token sequence and records the max absolute difference.

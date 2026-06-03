@@ -83,6 +83,7 @@ DEFAULT_ENGINE_CAP_MASK = int(
 
 OUTPUT_TOKENS = "tokens"
 OUTPUT_TEXT = "text"
+OUTPUT_LOGPROBS = "logprobs"
 OUTPUT_TOPK_IDS = "topk_ids"
 OUTPUT_TOPK_LOGPROBS = "topk_logprobs"
 OUTPUT_HOOK_OUTPUTS = "hook_outputs"
@@ -90,6 +91,7 @@ DEFAULT_TOPK_K = 4
 _RUNTIME_OUTPUT_PREFIXES = (
     OUTPUT_TOKENS,
     OUTPUT_TEXT,
+    OUTPUT_LOGPROBS,
     OUTPUT_TOPK_IDS,
     OUTPUT_TOPK_LOGPROBS,
     OUTPUT_HOOK_OUTPUTS,
@@ -271,6 +273,7 @@ class ContinuationBlockResult:
     stop_reason: str | None
     topk_ids: torch.Tensor | None = None
     topk_logprobs: torch.Tensor | None = None
+    logprobs: torch.Tensor | None = None
     hidden: torch.Tensor | None = None
     hook_outputs: Dict[str, Any] | None = None
 
@@ -343,6 +346,7 @@ class Req:
     _input_ids_list: List[int] = field(default_factory=list, init=False, repr=False)
     _runtime_outputs: Tuple[str, ...] = field(default=(), init=False, repr=False, compare=False)
     _model_outputs: Tuple[str, ...] = field(default=(), init=False, repr=False, compare=False)
+    _requested_logprobs: bool = field(default=False, init=False, repr=False, compare=False)
     _requested_topk_k: int = field(default=0, init=False, repr=False, compare=False)
     _requested_topk_ids: bool = field(default=False, init=False, repr=False, compare=False)
     _requested_topk_logprobs: bool = field(
@@ -438,6 +442,7 @@ class Req:
         self.requested_outputs = normalized
         self._runtime_outputs = runtime_outputs
         self._model_outputs = model_outputs
+        self._requested_logprobs = OUTPUT_LOGPROBS in runtime_outputs
         self._requested_topk_k = topk_k
         self._requested_topk_ids = any(
             name == OUTPUT_TOPK_IDS or name.startswith(f"{OUTPUT_TOPK_IDS}:")
@@ -455,6 +460,10 @@ class Req:
     @property
     def model_outputs(self) -> Tuple[str, ...]:
         return self._model_outputs
+
+    @property
+    def requested_logprobs(self) -> bool:
+        return self._requested_logprobs
 
     @property
     def requested_topk_k(self) -> int:
@@ -956,6 +965,7 @@ class Batch:
     has_logit_processors: bool = field(init=False)
     requested_sample_outputs: Tuple[str, ...] = field(init=False)
     requested_runtime_outputs: Tuple[str, ...] = field(init=False)
+    requested_logprobs: bool = field(init=False)
     requested_topk_k: int = field(init=False)
     requested_topk_ids: bool = field(init=False)
     requested_topk_logprobs: bool = field(init=False)
@@ -995,6 +1005,7 @@ class Batch:
         runtime_output_names = tuple(runtime_outputs)
         self.requested_runtime_outputs = runtime_output_names
         self.requested_sample_outputs = tuple(model_outputs)
+        self.requested_logprobs = OUTPUT_LOGPROBS in runtime_output_names
         self.requested_topk_k = requested_topk
         self.requested_topk_ids = any(
             name == OUTPUT_TOPK_IDS or name.startswith(f"{OUTPUT_TOPK_IDS}:")
