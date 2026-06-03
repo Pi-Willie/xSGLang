@@ -61,10 +61,18 @@ class FP32MasterAdamW:
         betas: tuple[float, float],
         eps: float,
         weight_decay: float,
+        master_device: torch.device | str = "cpu",
     ) -> None:
+        # FP32 master weights + Adam moment buffers live on master_device (CPU by default).
+        # On a single 80GB H100 we cannot hold xsglang weights+KV, the BF16 trainer, BF16
+        # grads, AND 48GB of FP32 optimizer state at once. Keeping master/m/v pinned on CPU
+        # and running the (single) AdamW step on CPU costs only a grad copy down + param copy
+        # up per update, which is cheap relative to rollout. Matches plan.txt's memory schedule.
+        self.master_device = torch.device(master_device)
         self.model_params = [param for param in parameters if param.requires_grad]
         self.master_params = [
-            param.detach().float().clone().requires_grad_(True) for param in self.model_params
+            param.detach().float().to(self.master_device).clone().requires_grad_(True)
+            for param in self.model_params
         ]
         self.optimizer = torch.optim.AdamW(
             self.master_params,
@@ -88,7 +96,9 @@ class FP32MasterAdamW:
             if model_param.grad is None:
                 master_param.grad = None
             else:
-                master_param.grad = model_param.grad.detach().float().clone()
+                master_param.grad = (
+                    model_param.grad.detach().float().to(self.master_device)
+                )
 
     def refresh_model_from_master(self) -> None:
         with torch.no_grad():
@@ -274,6 +284,7 @@ def branch_grpo_train_step(
     device: torch.device | str | None = None,
     shuffle: bool = True,
     seed: int | None = None,
+    on_policy_old_logprobs: bool = True,
 ) -> BranchTrainStepStats:
     if denominator_tokens <= 0:
         raise ValueError("denominator_tokens must be positive")
@@ -308,9 +319,16 @@ def branch_grpo_train_step(
     ):
         batch = collate_train_examples(examples, device=device, pad_token_id=pad_token_id)
         current_logprobs = trainer_selected_logprobs(model, batch)
+        # On-policy old-logprobs: with exactly one PPO epoch / one optimizer step, the
+        # behaviour policy IS the current trainer policy. Setting old = current.detach()
+        # makes the importance ratio rho == 1 exactly (the "rho ~= 1 before the step"
+        # condition plan.txt assumes), which removes cross-engine BF16 numeric bias that
+        # would otherwise enter via xsglang-stored old logprobs. The PPO clip path is kept
+        # intact for future multi-epoch experiments. See LAB_NOTEBOOK deviation note.
+        old_logprobs = current_logprobs.detach() if on_policy_old_logprobs else batch.old_logprobs
         loss, stats = branch_drgrpo_loss(
             current_logprobs=current_logprobs,
-            old_logprobs=batch.old_logprobs,
+            old_logprobs=old_logprobs,
             advantages=batch.advantages,
             response_mask=batch.response_mask,
             denominator_tokens=denominator_tokens,

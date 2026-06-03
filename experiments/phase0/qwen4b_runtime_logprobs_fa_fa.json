@@ -1,0 +1,55 @@
+{
+  "model": "Qwen/Qwen3-4B",
+  "resolved_model_path": "/home/wilhelmhedenskog/.cache/huggingface/hub/models--Qwen--Qwen3-4B/snapshots/1cfa9a7208912126459214e8b04321603b3df60c",
+  "attention_backend": "fa,fa",
+  "cuda_graph_max_bs": 0,
+  "prompt": "Solve the math problem. Write the final short answer inside <answer>...</answer>.\n\nProblem:\nWhat is 2 + 2?\n\nSolution:\n",
+  "token_ids": [
+    785,
+    3491,
+    374,
+    264,
+    4285,
+    5256,
+    315,
+    1378
+  ],
+  "text": "The problem is a simple addition of two",
+  "forced_token_id": null,
+  "minisgl_logprobs": [
+    -0.8850079774856567,
+    -0.6434085369110107,
+    -0.18837349116802216,
+    -0.4282410442829132,
+    -0.01759808138012886,
+    -0.12706612050533295,
+    -0.06692411750555038,
+    -0.011674300767481327
+  ],
+  "hf_logprobs": [
+    -0.8233729600906372,
+    -0.7025769948959351,
+    -0.1679355502128601,
+    -0.42960888147354126,
+    -0.017229288816452026,
+    -0.12706485390663147,
+    -0.07540352642536163,
+    -0.011536435224115849
+  ],
+  "abs_diffs": [
+    0.06163501739501953,
+    0.059168457984924316,
+    0.02043794095516205,
+    0.0013678371906280518,
+    0.0003687925636768341,
+    1.2665987014770508e-06,
+    0.008479408919811249,
+    0.00013786554336547852
+  ],
+  "mean_abs_diff": 0.018949573393911123,
+  "max_abs_diff": 0.06163501739501953,
+  "mean_atol": 0.002,
+  "max_atol": 0.05,
+  "passed": false,
+  "elapsed_ms": 116.68733599998404
+}

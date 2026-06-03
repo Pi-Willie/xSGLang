@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Any
 
 import torch
+
+# This H100 image has a cudart/nvrtc version mismatch that breaks cuDNN's SDPA JIT
+# backend ("No valid engine configs ... RUNTIME_PREREQUISITE_MISSING"). Disable the
+# cuDNN SDPA backend so PyTorch uses the prebuilt flash / mem-efficient kernels.
+if torch.cuda.is_available():
+    torch.backends.cuda.enable_cudnn_sdp(False)
+
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer

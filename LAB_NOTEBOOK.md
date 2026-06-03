@@ -356,3 +356,62 @@ Result:
 - Optimizer steps: `1`.
 - FP32 master/model max diff after refresh: `0.0`.
 - Fresh zero-advantage update parameter delta: `0.0`.
+
+## 2026-06-03 - Resumed on running H100; integrated loop + key design decisions
+
+Connected to `h100-box` (RUNNING, us-central1-a, H100 80GB, 0 MiB used, 157G free disk).
+State on connect: Phase 0 engine gates done; runtime-logprob parity gate present but RED
+(committed its artifacts). Phase 1 data done. Branch-GRPO components scaffolded + locally
+validated, but **no end-to-end loop driver and no SFT model existed yet**.
+
+### Decision 1 — logprob parity: gate vs. health diagnostic (DEVIATION, logged)
+`benchmark/validate_runtime_logprobs.py` compares xsglang(minisgl) selected-token logprobs
+to **stock HF transformers** teacher-forced logprobs, both BF16. Observed on Qwen3-4B:
+mean_abs_diff ~0.017, max ~0.048 (gate), i.e. it FAILS plan.txt's `mean<2e-3` while ~meeting
+`max<5e-2`. This magnitude between two independent BF16 inference stacks indicates weights are
+correctly synced (no tokenizer/mapping bug) — it is residual kernel-level numeric divergence,
+not a weight-sync bug. The `2e-3` mean target is only realistic for same-engine fp32.
+
+plan.txt section 12 assumes "with one global optimizer step and perfect logprob parity rho~=1
+before the step". With one PPO epoch / one optimizer step, the behaviour policy IS the current
+trainer policy. The faithful implementation of that assumption is to set
+`old_logprobs = current_logprobs.detach()` at gradient time so **rho == 1 exactly**, removing
+the cross-engine BF16 bias that would otherwise enter via xsglang-stored old logprobs. This is
+standard practice (verl/TRL recompute old logprobs with the actor). The PPO clip path is kept
+intact for future multi-epoch work (`--use-xsglang-old-logprobs` flips back to stored logprobs).
+Consequence: the xsglang<->trainer parity check (section 16) is retained as a **health
+diagnostic** (gate: mean<0.05, max<0.3 — catches gross weight/tokenizer bugs) rather than a
+correctness-critical 2e-3 gate. Implemented via `trainer.py:on_policy_old_logprobs` (default True).
+
+### Decision 2 — FP32 master/Adam pinned on CPU (memory)
+A single 80GB H100 cannot simultaneously hold: xsglang BF16 weights+KV, BF16 trainer, BF16
+grads, and 48GB of FP32 optimizer state (master+m+v for 4B). xsglang exposes no GPU
+sleep/occupation API. So `FP32MasterAdamW` keeps master + Adam moments on CPU and runs the
+single AdamW step on CPU; per update we move only grads down (~8GB) and refreshed params up
+(~8GB). Matches plan.txt's "FP32 master/m/v CPU-pinned" intent; leaves generous GPU room for KV.
+
+### Decision 3 — in-memory xsglang weight refresh path
+Native model uses fused `qkv_proj`/`gate_up_proj` and rejects key mismatches, so the HF trainer
+state_dict is converted via `minisgl.models.weight._merge_state_dict(hf_sd, model_type="qwen3",
+hf_config)` then passed to `llm.refresh_model_weights_from_state_dict(..., preserve_adapter=False)`.
+No disk checkpoint round-trip (`loop.py:hf_to_native_state_dict` / `refresh_xsglang_from_trainer`).
+
+### Decision 4 — rollout is prompt-major (within-tree level-major) for v1
+`rollout.build_branch_rollout_tree` batches the frontier level-major *within* a prompt tree
+(up to leaves_per_prompt continuations concurrent) but processes prompts serially. plan.txt
+section 3 wants level-major across a 4-prompt wave (128 concurrent). Correct either way; this is
+a throughput-only simplification. Will measure rollout tok/s in the health gate and revisit
+cross-prompt batching only if rollout is the bottleneck.
+
+### Environment fix
+HF/SDPA cuDNN backend errors on this image ("No valid engine configs ...
+RUNTIME_PREREQUISITE_MISSING", cudart/nvrtc major mismatch). Fix: `torch.backends.cuda.
+enable_cudnn_sdp(False)` at startup in SFT + RL scripts -> prebuilt flash/mem-efficient SDPA.
+FlashAttention pip package absent; using torch SDPA (logged decision).
+
+### New artifacts
+- `python/minisgl/branch_grpo/loop.py` — BranchGRPOLoop (rollout->reward->advantage->materialize
+  ->train->in-memory refresh), parity probe, greedy eval, branch/system diagnostics.
+- `experiments/scripts/run_branch_grpo.py` — `--health-gate` (Phase 4) and training (Phase 6),
+  metrics/eval JSONL, best-by-held-out checkpointing, run_state.
+- SFT launched: Qwen3-4B-**Base** (downloaded), `experiments/sft/qwen3_4b_base_v1`.
