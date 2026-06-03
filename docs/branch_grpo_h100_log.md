@@ -7,6 +7,11 @@ Current pushed commits:
 - `a7632f2` - Batch sibling fork setup and cache resets.
 - `e733613` - Add model refresh and branch metrics.
 - `c7e95d4` - Handle tied LM head during weight refresh.
+- `5ec6dfc` - Add H100 branch benchmark harness and log.
+- `02f8a29` - Record Qwen3-4B branch scaling benchmarks.
+- `985cba2` - Add in-memory weight refresh validation.
+- `a22cfa8` - Stabilize tiny policy validation prompt.
+- `a3b9640` - Allow partial weight refresh validation.
 
 ## Design Calls So Far
 
@@ -100,7 +105,7 @@ Earlier old-path demo result on the same H100 and shape, before the benchmark/de
 - Best level throughput: `12643.53 tok/s`.
 - Final level per-branch throughput: `98.78 tok/s/branch`.
 
-This is only a smoke comparison on `Qwen3-0.6B`; the required Qwen3-4B baseline/improved benchmark is still pending.
+This is only a smoke comparison on `Qwen3-0.6B`; the required Qwen3-4B baseline/improved benchmark is recorded above.
 
 ### Full-Model Refresh Smoke
 
@@ -119,12 +124,50 @@ Result:
 - Released continuations during refresh: 1.
 - Greedy tokens before and after same-checkpoint refresh matched: `[576, 11652, 1265, 387]`.
 
-## Pending
+### Native Weight Refresh and Train Validation
 
-- Run Qwen3-4B baseline from pre-change `main`/`29f4977` using the standalone harness.
-- Run Qwen3-4B improved branch with the same harness.
-- Document plateau/cap and why scaling stops.
-- Add and validate corrupted in-memory full-weight refresh.
-- Add and validate LoRA hot-swap timing.
-- Add and validate a tiny real train/sample loop.
-- Final cleanup/review notes and completion audit.
+Validation harness:
+
+```bash
+python benchmark/validate_weight_refresh.py \
+  --model Qwen/Qwen3-0.6B \
+  --json-output benchmark/out/qwen06b_weight_refresh_validation.json \
+  --memory-ratio 0.25 \
+  --max-running-req 32 \
+  --tokens 6
+```
+
+Qwen3-0.6B full validation:
+
+- Corrupt native state refresh changed greedy output from `[279, 1372, 315, 1251, 879, 614]` to `[0, 0, 0, 0, 0, 0]`.
+- Restoring the original native state recovered `[279, 1372, 315, 1251, 879, 614]`.
+- Corrupt refresh elapsed: `246.74 ms`; restore refresh elapsed: `226.99 ms`.
+- Tiny LoRA load/unload: `1.48 ms` / `0.23 ms`.
+- Tiny policy step target: token id `9834` for text `" yes"`.
+- Target logprob improved from `-8.5903` to `0.0`; generated tokens changed from `[279, 1372, 315, 1251, 879, 614]` to `[9834, 9834, 9834, 9834, 9834, 9834]`.
+- Reloading the trained checkpoint into the live engine elapsed: `276.67 ms`.
+
+Qwen3-4B corrupt-refresh and LoRA validation:
+
+```bash
+python benchmark/validate_weight_refresh.py \
+  --model Qwen/Qwen3-4B \
+  --json-output benchmark/out/qwen4b_weight_refresh_corrupt_lora.json \
+  --memory-ratio 0.25 \
+  --max-running-req 32 \
+  --tokens 4 \
+  --skip-train-step
+```
+
+Result:
+
+- Corrupt native state refresh changed greedy output from `[330, 785, 4226, 374]` to `[0, 0, 0, 0]`.
+- Restoring the original native state recovered `[330, 785, 4226, 374]`.
+- Corrupt refresh elapsed: `931.81 ms`; restore refresh elapsed: `942.35 ms`.
+- Tiny LoRA load/unload on the 4B engine: `1.90 ms` / `0.27 ms`.
+
+## Remaining
+
+- Run final cleanup/review checks.
+- Commit validation artifacts and updated log.
+- Close the H100 instance after the completion audit passes.

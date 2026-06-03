@@ -1,0 +1,85 @@
+{
+  "model": "Qwen/Qwen3-0.6B",
+  "resolved_model_path": "/home/wilhelmhedenskog/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca",
+  "corrupt_refresh": {
+    "before_tokens": [
+      279,
+      1372,
+      315,
+      1251,
+      879,
+      614
+    ],
+    "corrupt_tokens": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "restored_tokens": [
+      279,
+      1372,
+      315,
+      1251,
+      879,
+      614
+    ],
+    "corrupt_changed_output": true,
+    "restore_recovered_output": true,
+    "corrupt_refresh": {
+      "source": "zeroed_native_state",
+      "elapsed_ms": 246.73911699983364,
+      "preserved_adapter": null,
+      "released_continuations": 0
+    },
+    "restore_refresh": {
+      "source": "restored_native_state",
+      "elapsed_ms": 226.99244700015697,
+      "preserved_adapter": null,
+      "released_continuations": 0
+    }
+  },
+  "lora_hot_swap": {
+    "adapter_dir": "/tmp/xsglang-refresh-g4yw3koy/tiny_lora",
+    "active_adapter": "/tmp/xsglang-refresh-g4yw3koy/tiny_lora",
+    "load_ms": 1.4812469999014866,
+    "unload_ms": 0.2285969999320514
+  },
+  "tiny_policy_step": {
+    "before_tokens": [
+      279,
+      1372,
+      315,
+      1251,
+      879,
+      614
+    ],
+    "after_tokens": [
+      9834,
+      9834,
+      9834,
+      9834,
+      9834,
+      9834
+    ],
+    "output_changed": true,
+    "train": {
+      "trained_dir": "/tmp/xsglang-refresh-g4yw3koy/trained_policy_step",
+      "target_text": " yes",
+      "target_id": 9834,
+      "before_logprob": -8.590310096740723,
+      "after_logprob": 0.0,
+      "improved_logprob": true,
+      "loss": 8.590310096740723
+    },
+    "refresh": {
+      "model_path": "/tmp/xsglang-refresh-g4yw3koy/trained_policy_step",
+      "resolved_model_path": "/tmp/xsglang-refresh-g4yw3koy/trained_policy_step",
+      "elapsed_ms": 276.66678199966555,
+      "preserved_adapter": null,
+      "released_continuations": 0
+    }
+  }
+}
