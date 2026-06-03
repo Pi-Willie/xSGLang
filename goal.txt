@@ -1,0 +1,210 @@
+/goal
+
+# Overnight research session — Branch-GRPO on Qwen3-4B (H100)
+
+## Mission
+
+You are running an autonomous ML research session. The objective is to produce the **best
+possible Branch-GRPO-trained Qwen3-4B math model**, together with a complete and honest
+research record. Treat this as research, not a one-shot script: form hypotheses, run
+controlled experiments, characterize noise, make decisions from evidence, and write down
+what you did and why. Work continuously until the Completion Contract (§9) is fully
+satisfied, then cleanly shut down and sync.
+
+## Priority order (use this whenever you trade off)
+
+1. **Loop health, timing, and verified weight movement.** Prove the machine actually works —
+   weights move, generations change after refresh, no leaks, parity holds, throughput is
+   measured — *before* trusting any reward number.
+2. **Stable, real training signal.**
+3. **Reward shaping and hyperparameter quality.**
+
+Be efficient with H100 time, but when establishing correctness, patience beats speed.
+
+## Hard constraints
+
+- **Branch-GRPO only.** Do NOT implement, run, or compare against flat/normal GRPO. All
+  effort goes into making Branch-GRPO work and proving it works well.
+- **`plan.txt` in the repo is the authoritative algorithm spec.** Read it first and implement
+  exactly that (fixed 4×2×2×2 tree, leave-one-out sibling advantage, constant
+  generation-budget denominator with no length/std normalization, edge multiplicity via
+  leaf-slot materialization, one accumulated optimizer step per update, xsglang for
+  rollout/fork/KV and in-memory weight refresh, logprob parity gating, FP32 master weights).
+  If you deviate, log the reason in the notebook.
+- **The H100 is PREEMPTIBLE.** Assume the machine can disappear at any moment. The preemption
+  protocol (§8) is always in force.
+- This is autonomous and overnight: never block waiting for human input. Make reasonable,
+  documented choices and keep moving.
+
+---
+
+## Phase 0 — Environment
+
+- Bring up / connect to the H100. Verify with `nvidia-smi` (GPU, BF16, memory), CUDA, and
+  free disk. Record the environment.
+- Get **xsglang** onto the server and set it up cleanly. Use the branch referenced in
+  `plan.txt` (`branch-grpo-h100-hardening` @ `36ec59b`) if available, else latest. Install in
+  an isolated env, pin versions. Run its self-tests / branch-scaling benchmark and the
+  weight-refresh (corrupt + restore) test to confirm it works **before** building on it.
+- Set up the trainer env (torch, transformers, datasets, flash-attn, etc.). Pin and record
+  all versions.
+- Initialize/continue a git repo. Commit a baseline. Create `experiments/` and a running
+  `LAB_NOTEBOOK.md`.
+- The SFT dataset lives on the **local workstation** at
+  `/Users/wilhelmhedenskog/qagent/math/math-fireworks.jsonl` (not the H100). Transfer it to
+  the server. Verify row count and inspect its schema.
+
+**Gate:** do not proceed until GPU is verified, xsglang self-tests pass, and both datasets
+are present and inspected.
+
+---
+
+## Phase 1 — Data
+
+**A. RL prompt + eval set — OpenR1-Math-220k, streamed.**
+- Stream `open-r1/OpenR1-Math-220k` with `datasets` `streaming=True` (do not download the
+  whole thing). Authenticate to HF if needed.
+- Inspect the schema. Keep only `(problem, answer)`. Normalize the ground-truth answer (strip
+  whitespace, `$`, `\boxed{}`, etc.). **Keep a row iff the normalized answer is non-empty and
+  ≤ 5 characters.** Skip everything else. Rationale: the model should not have to learn
+  complex LaTeX formatting — short answers keep the verifier clean.
+- Materialize a filtered RL prompt pool **and a fixed held-out eval split that is never
+  trained on**. Record counts. Save to disk and sync.
+
+**B. SFT format set — `math-fireworks.jsonl`.**
+- Inspect its schema. Map each row to the exact target schema:
+  ```
+  <think>{reasoning}</think>
+  <answer>{answer}</answer>
+  ```
+  (a single newline between `</think>` and `<answer>`).
+- Build the SFT dataset: prompt = the problem under whatever prompt template you will also use
+  at RL time; completion = the schema string. **The prompt template must be identical between
+  SFT and RL.**
+
+---
+
+## Phase 2 — SFT the BASE model
+
+- Fine-tune **Qwen3-4B BASE** (not Instruct) on the SFT set so it reliably emits
+  `<think>…</think>\n<answer>…</answer>` with a short answer in the tag. This is the RL
+  starting policy.
+- Use a sensible SFT setup for the H100 (full finetune, BF16, packing). LoRA→merge is
+  acceptable if cleaner, but the final SFT artifact must be a merged standalone model.
+- Validate on held-out prompts: require near-universal format adherence (tags present and
+  parseable) and non-trivial answer accuracy.
+- **Save the SFT'd base model to durable H100 storage AND immediately pull a copy to the
+  local workstation.** This is a required deliverable; protect it against preemption from the
+  moment it exists.
+
+**Gate:** format adherence on held-out is near-universal (~95%+) and answers are parseable
+before starting RL.
+
+---
+
+## Phase 3 — Implement Branch-GRPO
+
+- Implement exactly the algorithm in `plan.txt`. xsglang does rollout / fork / KV reuse and
+  in-memory weight refresh; the trainer does exact autograd via leaf-slot materialization.
+- **Verifier:** extract the content of `<answer>…</answer>`, normalize, string-compare to the
+  ground truth → binary reward (1/0). Missing or unparseable answer → reward 0. No LLM judge,
+  no partial credit in v1.
+
+---
+
+## Phase 4 — Prove the loop is healthy (before chasing reward)
+
+Run the `plan.txt` smoke config and assert, with logged evidence in `LAB_NOTEBOOK.md`:
+- xsglang↔trainer **logprob parity** within `plan.txt` thresholds.
+- The loss **denominator is the constant** `P·Bmax·Tmax` on every update.
+- After an optimizer step + weight refresh, **trainer weights actually moved** (weight-delta
+  norm > 0) **and xsglang generations actually changed** (log a concrete before/after diff).
+- **No KV / memory leak** across many updates (flat GPU memory).
+- Zero-advantage prompts contribute zero gradient; mixed-sibling nodes contribute nonzero.
+- Per-phase timing logged: rollout and train tokens/s, branch-spawn ms, weight-refresh
+  seconds, peak memory.
+
+If any check fails, **stop and fix it** before continuing. Priority #1 is a healthy, fast
+loop with verified weight movement.
+
+**Gate:** all health checks green and recorded.
+
+---
+
+## Phase 5 — Characterize noise (so "improvement" is meaningful)
+
+- Before scaling, estimate evaluation noise: run the held-out greedy eval several times and/or
+  across a few seeds, and compute the metric's std (or a bootstrap CI over the eval set).
+  Record this **noise band**.
+- Define, and then use everywhere: **real improvement = a gain that exceeds ~2σ of the noise
+  band and is sustained over multiple consecutive eval points** — not a single lucky eval, not
+  within-variance wiggle.
+
+---
+
+## Phase 6 — Train, iterate, saturate
+
+- Move to the main `plan.txt` config and scale sensibly. Train Branch-GRPO and iterate like a
+  researcher: tune reward shaping, branch behavior, wave/batch sizes, and LR within the
+  spec's spirit — **changing one thing at a time** and attributing each effect.
+- Watch the load-bearing diagnostics from `plan.txt` (sibling-disagreement / mixed-node rate
+  and mean|advantage| by depth, grad-norm, approx-KL, entropy, response length, reward) plus
+  held-out greedy accuracy and pass@k.
+- **Keep training while held-out accuracy shows real improvement (§5). Continue until it
+  PLATEAUS** — no noise-exceeding improvement over a defined window of consecutive eval points
+  = RL saturated. Then stop. Do not stop on a noisy dip; do not keep burning compute on a flat
+  curve.
+- Continuously checkpoint the **best-by-held-out-eval** model and pull it local whenever it
+  improves.
+
+---
+
+## Phase 7 — Taste test
+
+- Periodically and at the end, qualitatively inspect the best model on held-out prompts:
+  format adherence, think/answer coherence, and absence of degeneration (repetition, empty
+  `<think>`, gibberish, mode collapse, answer-hacking such as always emitting a frequent
+  answer). Compare against the SFT starting point.
+- Make an explicit call: **is the branch model sound or broken?** If broken, diagnose, roll
+  back to the last good checkpoint, fix, and continue. Record the verdict and the evidence.
+
+---
+
+## Phase 8 — Preemption protocol (always on)
+
+- After every code change: `git commit` + push.
+- Checkpoint frequently to durable storage: model + optimizer + RL state + RNG + a
+  phase/state file. Mirror the critical artifacts to the local workstation (SFT base, current
+  best Branch-GRPO model, configs, `LAB_NOTEBOOK.md`, all curves/metrics).
+- **Resume must be idempotent:** on startup, read the state file, find the last good
+  checkpoint, and continue exactly from there. Never restart from scratch when a valid
+  checkpoint exists.
+- Treat losing the machine as expected, not exceptional.
+
+---
+
+## Phase 9 — Completion Contract (DONE only when ALL hold)
+
+1. xsglang set up and self-tested on the H100.
+2. Filtered OpenR1 RL set + fixed held-out eval built and saved.
+3. Qwen3-4B BASE SFT'd to the schema; model saved on H100 **and** pulled local.
+4. Branch-GRPO implemented per `plan.txt`; all loop-health checks (§4) green with logged
+   evidence.
+5. Trained until held-out accuracy **saturates** per the noise-aware criterion (§5), with
+   evidence the curve plateaued.
+6. Best Branch-GRPO model taste-tested (§7) and judged sound (or fixed until sound).
+7. Full research record: reward + accuracy curves for **all** runs, per-update metric logs,
+   every run's config and seed, and `LAB_NOTEBOOK.md` narrating hypotheses, decisions, and
+   what worked / didn't, plus a final results summary.
+8. Everything synced logically; the **final best Branch-GRPO model pulled to the local
+   workstation**, alongside the SFT base.
+9. **H100 released / shut down** and confirmed off.
+
+Until all nine hold, keep working.
+
+## Logging (every run)
+
+Everything in the `plan.txt` metric list, plus: held-out greedy accuracy, pass@k, the noise
+band, system timings, per-update weight-delta, and checkpoint pointers. Save plots as files in
+`experiments/<run_id>/`. The notebook is the human-readable through-line; the per-run dirs are
+the raw record.

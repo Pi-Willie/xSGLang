@@ -1,0 +1,26 @@
+{
+  "source": "/Users/wilhelmhedenskog/qagent/math/math-fireworks.jsonl",
+  "output": "experiments/data/sft_math_fireworks.jsonl",
+  "prompt_template": "branch-grpo-math-v1",
+  "source_rows": 1000,
+  "written_rows": 1000,
+  "skipped_rows": 0,
+  "sample_keys": [
+    "id",
+    "prompt_template",
+    "problem",
+    "prompt",
+    "completion",
+    "answer",
+    "normalized_answer"
+  ],
+  "first_row": {
+    "id": "sft-0",
+    "prompt_template": "branch-grpo-math-v1",
+    "problem": "What is the volume, in cubic units, of a cube whose surface area is 600 square units?",
+    "prompt": "Solve the math problem. Write your reasoning inside <think>...</think> and the final short answer inside <answer>...</answer>.\n\nProblem:\nWhat is the volume, in cubic units, of a cube whose surface area is 600 square units?\n\nSolution:\n",
+    "completion": "<think>A cube’s surface consists of six congruent square faces. If the side length of the cube is \\(s\\) (with \\(s>0\\)), then each face has area \\(s^2\\), and the total surface area is \\(6s^2\\). The problem states that this surface area equals 600 square units, so\n\n\\[\n6s^2 = 600.\n\\]\n\nDividing both sides by 6 yields\n\n\\[\ns^2 = 100.\n\\]\n\nSince a length is positive, \\(s\\) is the positive square root of 100, which gives \\(s = 10\\).\n\nThe volume of a cube is the cube of its side length: \\(V = s^3\\). Substituting \\(s = 10\\),\n\n\\[\nV = 10^3 = 10 \\cdot 10 \\cdot 10 = 1000.\n\\]\n\nTherefore the volume is 1000 cubic units.Therefore the volume is 1000 cubic units</think>\n<answer>1000</answer>",
+    "answer": "1000",
+    "normalized_answer": "1000"
+  }
+}

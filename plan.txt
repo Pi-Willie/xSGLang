@@ -1,0 +1,1289 @@
+# Final Branch-Dr.GRPO xsglang spec
+
+This is the version I would implement.
+
+The core change from your draft is **not the math**. The math is good. The engineering change is this:
+
+**Use xsglang only for rollout/fork/KV reuse. Use the trainer model for exact autograd logprob training. Keep the logical training unit as an edge, but materialize leaf-slot paths for the trainer so the edge multiplicity is exact and you do not do detached-KV or isolated-edge approximations.**
+
+Also: **do not update level-by-level.** Sample the whole tree, score the whole tree, back up all advantages, then take one accumulated optimizer step over the whole update.
+
+Dr.GRPO’s important fixes are preserved: no response-length normalization, no per-question reward standard-deviation normalization, and a constant generation-budget denominator. The Dr.GRPO paper explicitly identifies response-length normalization and per-question std normalization as the two biased pieces in vanilla GRPO, then replaces response-length division with a constant generation budget. ([arXiv][1])
+
+---
+
+# 0. Immutable run configuration
+
+Use this as the main run.
+
+| Item                   |                                                        Value |
+| ---------------------- | -----------------------------------------------------------: |
+| Model                  |                 Qwen3-4B or equivalent 4B decoder-only model |
+| Precision              | BF16 forward/backward, FP32 Adam states, FP32 master weights |
+| GPU                    |                                                 1× H100 80GB |
+| Prompt max length      |                                512 tokens including template |
+| Generation max length  |                                                  1024 tokens |
+| Prompts/update         |                                                            8 |
+| Rollout wave size      |                                       4 prompt trees at once |
+| Waves/update           |                                                            2 |
+| Root samples           |                                                            4 |
+| Branch factor          |                                                            2 |
+| Branch points          |                               128, 256, 512 generated tokens |
+| Leaves/prompt          |                                        32 nominal leaf slots |
+| Reward                 |               binary verifier reward, 1 correct, 0 incorrect |
+| Temperature            |                                                          1.0 |
+| top_p                  |                                                          1.0 |
+| top_k / min_p          |                                       disabled for first run |
+| PPO epochs             |                                                            1 |
+| Optimizer steps/update |                                                    exactly 1 |
+| LR                     |                                                1e-6 constant |
+| Optimizer              |                                                        AdamW |
+| Adam betas             |                                              β1=0.9, β2=0.95 |
+| Adam eps               |                                                         1e-8 |
+| Weight decay           |                                                            0 |
+| PPO clip               |                                                          0.2 |
+| Grad clip              |                                              global norm 1.0 |
+| KL coefficient         |                                                            0 |
+| Reference model        |                                                   not loaded |
+| Trainer                |                          PyTorch/Unsloth-style full finetune |
+| Rollout engine         |                      xsglang native continuation/fork engine |
+
+The published Dr.GRPO recipe uses the same broad optimizer shape: AdamW, learning rate 1e-6, constant LR schedule, one PPO epoch, β/KL set to 0, temperature 1, top-p 1, BF16, FlashAttention, gradient checkpointing, and no reference-model compute when β is 0. ([GitHub][2])
+
+Qwen3-4B is a good concrete target because it is 4.0B parameters and uses GQA with 36 layers, 32 Q heads, and 8 KV heads. ([Hugging Face][3]) The H100 SXM 80GB target is appropriate for this loop; NVIDIA lists 80GB memory, 3.35TB/s memory bandwidth, and 1,979 TFLOPS BF16/FP16 Tensor Core throughput for H100 SXM. 
+
+---
+
+# 1. The actual tree
+
+Per prompt:
+
+```text
+prompt
+ ├─ root 0: generate to branch target 128
+ ├─ root 1: generate to branch target 128
+ ├─ root 2: generate to branch target 128
+ └─ root 3: generate to branch target 128
+
+each root forks into 2 children at ~128
+each child forks into 2 children at ~256
+each child forks into 2 children at ~512
+all final children continue to EOS or 1024
+```
+
+Widths:
+
+| Stage    | Active continuations | Absolute generation span | Nominal edge slot weight |
+| -------- | -------------------: | -----------------------: | -----------------------: |
+| root     |                    4 |                  0 → 128 |                        8 |
+| branch 1 |                    8 |                128 → 256 |                        4 |
+| branch 2 |                   16 |                256 → 512 |                        2 |
+| leaf     |                   32 |               512 → 1024 |                        1 |
+
+Nominal leaves:
+
+```text
+4 × 2 × 2 × 2 = 32
+```
+
+Flat GRPO generation budget per prompt:
+
+```text
+32 × 1024 = 32768 generated tokens
+```
+
+Branch rollout generated-token upper bound per prompt:
+
+```text
+4×128 + 8×128 + 16×256 + 32×512
+= 512 + 1024 + 4096 + 16384
+= 22016 generated edge tokens
+```
+
+For 8 prompts/update:
+
+```text
+nominal denominator tokens = 8 × 32 × 1024 = 262144
+branch rollout tokens      = 8 × 22016       = 176128
+```
+
+Semantic boundary snapping may slightly change stage lengths, but the denominator **never changes**.
+
+---
+
+# 2. Boundary snapping
+
+Branch targets are absolute generated-token counts, not segment lengths.
+
+```python
+BRANCH_TARGETS = [128, 256, 512]
+BOUNDARY_LOOKAHEAD = 32
+MAX_GEN = 1024
+```
+
+At each target:
+
+```text
+1. Generate until generated_len >= target.
+2. After target, stop at the first semantic boundary.
+3. A semantic boundary is any generated token boundary whose decoded suffix contains:
+   - "\n"
+   - "\n\n"
+   - ".\n"
+   - ":\n"
+   - ";\n"
+4. If no boundary appears by target + 32 tokens, force branch.
+5. If EOS appears before the branch point, mark the node terminal.
+```
+
+Do **not** branch before the target. Delayed branching is allowed; early branching is not.
+
+If a branch target is delayed from 512 to 540, the final leaf segment becomes `540 → 1024`, not `540 → 1052`.
+
+---
+
+# 3. xsglang rollout policy
+
+Use xsglang in-process, not through an OpenAI-compatible HTTP endpoint. The point is to keep continuation handles live and fork them directly.
+
+SGLang-class runtimes are designed around prefix/KV reuse, continuous batching, paged attention, and RadixAttention-style prefix caching; that is exactly the memory pattern wanted here. ([SGLang Documentation][4]) For this run, use your xsglang branchable continuation API directly: pause, fork, resume, inspect tokens/logprobs, free.
+
+## Rollout wave size
+
+Use:
+
+```python
+ROLLOUT_WAVE_PROMPTS = 4
+PROMPTS_PER_UPDATE = 8
+WAVES_PER_UPDATE = 2
+```
+
+Do **not** try to run all 8 prompt trees concurrently in the first real run. Four prompt trees already gives a final-stage active width of:
+
+```text
+4 prompts × 32 leaves = 128 live continuations
+```
+
+That is enough to keep the H100 busy while leaving memory headroom for Qwen3-style GQA KV, allocator fragmentation, paged-cache overhead, and the duplicate BF16 trainer weights.
+
+## Rollout order
+
+Rollout is **level-major inside each wave**, not prompt-major.
+
+For a wave of 4 prompts:
+
+```text
+1. Prefill all 4 prompts.
+2. Fork each prompt into 4 root continuations.
+3. Batch-generate all 16 roots to ~128.
+4. Fork every alive root into 2 children.
+5. Batch-generate all active continuations to ~256.
+6. Fork every alive node into 2 children.
+7. Batch-generate all active continuations to ~512.
+8. Fork every alive node into 2 children.
+9. Batch-generate all leaves to EOS or 1024.
+10. Copy token ids, old logprobs, metadata, and leaf text to CPU.
+11. Free every xsglang continuation and make KV blocks evictable.
+```
+
+Do not generate one complete tree at a time. That underuses xsglang. The correct rollout schedule is:
+
+```text
+all prompts at level 0
+then all prompts at level 1
+then all prompts at level 2
+then all prompts at leaf level
+```
+
+## Forking
+
+At every fork:
+
+```python
+children = parent.fork(2, seeds=[seed_a, seed_b])
+```
+
+Use unique deterministic per-continuation seeds:
+
+```python
+seed = hash64(global_seed, update_id, prompt_id, parent_node_id, child_index)
+```
+
+Do **not** force first tokens in the main run. Forced first tokens are useful for controlled search, but they change the behavior distribution unless you implement the exact proposal probability. For Branch-Dr.GRPO v1, siblings are iid samples from `π_old`.
+
+## What xsglang must return
+
+For every generated edge segment, store:
+
+```python
+tokens:        int32[num_edge_tokens]
+old_logprobs:  fp32[num_edge_tokens]
+texts:         only for leaf verifier / debugging
+finish_reason: eos | max_length | branch_boundary | forced_branch
+```
+
+Do not retokenize generated text for training. xsglang must be the source of token ids.
+
+---
+
+# 4. Rollout/trainer memory schedule
+
+On one H100, do not keep everything resident all the time.
+
+Use two explicit modes.
+
+## Rollout mode
+
+GPU-resident:
+
+```text
+xsglang BF16 inference weights     ~8 GB
+trainer BF16 weights               ~8 GB
+xsglang KV cache / paged blocks     variable
+xsglang runtime workspace           variable
+```
+
+CPU-pinned during rollout:
+
+```text
+FP32 master weights
+FP32 Adam m
+FP32 Adam v
+rollout records
+verifier inputs/outputs
+```
+
+For Qwen3-4B, the KV formula is:
+
+```text
+num_layers × 2(K,V) × num_kv_heads × head_dim × bytes
+```
+
+With 36 layers, 8 KV heads, BF16, and head_dim 128, that is about:
+
+```text
+36 × 2 × 8 × 128 × 2 = 147456 bytes per token ≈ 144 KB/token
+```
+
+Some engines account/cache K and V layouts differently, so budget conservatively. For rollout wave size 4, the branch tree stores roughly:
+
+```text
+4 × (512 prompt tokens + 22016 generated tree tokens)
+≈ 90112 cached tokens
+```
+
+At ~144KB/token, that is roughly 13GB raw KV; with paging, fragmentation, CUDA graph/workspace, and allocator reserve, budget 25–35GB. That is fine on H100 when optimizer states are offloaded.
+
+## Train mode
+
+Before training:
+
+```text
+1. xsglang.free_all_continuations()
+2. xsglang.flush_or_release_kv()
+3. xsglang.release_weights_occupation()
+4. move FP32 master/m/v back to GPU
+```
+
+GPU-resident during train:
+
+```text
+BF16 trainer weights      ~8 GB
+BF16 gradients            ~8 GB
+FP32 master weights       ~16 GB
+FP32 Adam m/v             ~32 GB
+activations/workspace     remaining
+```
+
+Total optimizer-side memory is about 64GB before activations. This is why FP32 master weights are not optional here. With LR 1e-6, BF16-only parameter updates can silently quantize away small updates. Keep FP32 master weights unless you have a tested stochastic-rounding BF16 optimizer.
+
+After training:
+
+```text
+1. copy FP32 master → BF16 trainer params
+2. xsglang.resume_weights_occupation()
+3. xsglang.refresh_weights_from_state_dict(trainer_bf16_state_dict)
+4. offload FP32 master/m/v back to pinned CPU
+5. start next rollout
+```
+
+Never checkpoint to disk just to refresh xsglang. Use in-memory state-dict refresh.
+
+---
+
+# 5. Records
+
+Use edge-first records, but do not store full prefixes in every node. Store parent pointers and edge tokens. Materialize full paths lazily.
+
+```python
+@dataclass
+class Node:
+    id: int
+    prompt_id: int
+    parent_edge: int | None
+    depth: int                      # 0 prompt, 1 root, 2 after 128, 3 after 256, 4 after 512/leaf
+    generated_len: int              # absolute generated tokens from prompt
+    children: list[int]
+    terminal: bool
+    terminal_leaf_id: int | None
+    nominal_slot_count: int
+    reward_sum_slots: float | None
+    q_value: float | None
+```
+
+```python
+@dataclass
+class Edge:
+    id: int
+    prompt_id: int
+    parent_node: int
+    child_node: int
+    depth: int                      # 0 root, 1 128, 2 256, 3 512
+    tokens: np.ndarray              # int32
+    old_logprobs: np.ndarray        # fp32, same length as tokens
+    advantage: float | None
+    nominal_weight: int             # 8, 4, 2, or 1
+    start_gen_pos: int
+    end_gen_pos: int
+    finish_reason: str
+```
+
+```python
+@dataclass
+class Leaf:
+    id: int
+    prompt_id: int
+    node_id: int
+    path_edges: list[int]
+    nominal_slot_count: int         # usually 1; >1 only if terminal before planned forks
+    answer_text: str
+    reward: float
+    finish_reason: str
+```
+
+```python
+@dataclass
+class TrainExample:
+    prompt_id: int
+    leaf_id: int
+    input_ids: np.ndarray           # prompt + generated path
+    response_start: int
+    old_logprobs: np.ndarray        # response tokens only
+    advantages: np.ndarray          # response tokens only
+    response_mask: np.ndarray       # response tokens only
+    repeat_weight: int              # normally 1
+```
+
+Important: `Node.prefix_tokens` should not exist. That duplicates CPU memory and creates bugs. Reconstruct prefixes by walking `path_edges`.
+
+---
+
+# 6. Terminal-before-branch handling
+
+Treat EOS as an absorbing terminal.
+
+If a node reaches EOS before a planned branch point:
+
+```text
+1. Mark the node terminal.
+2. Create one Leaf for the terminal answer.
+3. Assign that Leaf the node’s remaining nominal slot count.
+4. Do not create fake token edges after EOS.
+5. For Q backup, fill all descendant nominal slots with the same reward.
+6. For training, duplicate via repeat_weight, not by generating virtual tokens.
+```
+
+Example:
+
+```text
+A root continuation reaches EOS before 128.
+That root would have represented 8 final leaf slots.
+Verifier is called once.
+The terminal leaf has nominal_slot_count = 8.
+The EOS action and earlier tokens receive multiplicity 8.
+No post-EOS tokens exist.
+Denominator still includes 32 × 1024 token budget for the prompt.
+```
+
+This preserves the fixed denominator and correctly penalizes or rewards premature stopping.
+
+---
+
+# 7. Reward
+
+Use only binary verifier correctness for v1.
+
+```python
+R = 1.0 if verifier(problem, answer_text) is correct else 0.0
+```
+
+No format reward in the loss. Log format validity separately.
+
+For math:
+
+```text
+1. Extract final answer from \boxed{} if present.
+2. Otherwise extract the final numeric/symbolic answer using the verifier parser.
+3. Compare to ground truth with the verifier.
+4. Invalid parse = reward 0.
+```
+
+Do not use an LLM judge in the first run. Do not add partial credit yet.
+
+---
+
+# 8. Branch-local advantage
+
+For every parent node `v` with children `c1...cm`:
+
+```python
+Q(c) = mean reward of all nominal leaf slots under c
+```
+
+Then leave-one-out sibling baseline:
+
+```python
+b_minus_c(v) = mean(Q(c') for c' in siblings if c' != c)
+```
+
+Edge advantage:
+
+```python
+A[v → c] = Q(c) - b_minus_c(v)
+```
+
+For binary rewards, this stays in `[-1, 1]`.
+
+Use nominal leaf slots, not only unique verifier calls.
+
+For a binary fork:
+
+```python
+A[left]  = Q(left)  - Q(right)
+A[right] = Q(right) - Q(left)
+```
+
+For the 4-way root:
+
+```python
+A[root_i] = Q(root_i) - mean(Q(other three roots))
+```
+
+No std normalization. No per-depth normalization. No subtree-size normalization.
+
+---
+
+# 9. Logical loss
+
+The logical edge loss is:
+
+```text
+L =
+- 1 / (P × Bmax × Tmax)
+  × Σ_prompts Σ_edges w_e Σ_tokens_in_edge
+      min(
+          ρ_t A_e,
+          clip(ρ_t, 1-ε, 1+ε) A_e
+      )
+```
+
+where:
+
+```text
+P     = 8
+Bmax  = 32
+Tmax  = 1024
+denom = 262144
+ε     = 0.2
+w_e   = nominal leaf slots under the child edge
+ρ_t   = exp(logp_current_t - logp_old_t)
+```
+
+This is the algorithm.
+
+But the trainer should not run one isolated forward per edge. That is the dumb computation to avoid.
+
+---
+
+# 10. Physical trainer representation
+
+Use **leaf-slot materialization** for exact training.
+
+For each nominal leaf slot, materialize the full prompt + generated path. The per-token advantage is the advantage of the edge that produced that token.
+
+This is exactly equivalent to the weighted edge loss because repeating a root edge under its 8 descendant leaves gives it weight 8; repeating a 128-edge under its 4 descendant leaves gives it weight 4; and so on.
+
+For one prompt:
+
+```text
+32 leaf-slot paths × 1024 max response tokens
+= 32768 denominator tokens
+```
+
+For the update:
+
+```text
+8 prompts × 32 leaf slots × 1024
+= 262144 denominator tokens
+```
+
+The trainer examples look like this:
+
+```text
+[prompt tokens][root edge tokens][128 edge tokens][256 edge tokens][512 edge tokens]
+               A_root           A_128          A_256          A_512
+```
+
+Prompt tokens are context only. They have no loss.
+
+This choice matters. Do **not** train isolated edge segments with xsglang rollout KV. xsglang KV has no autograd graph, and even if it did, the rollout KV belongs to `π_old`, not the current training graph. Detached-prefix training would be a biased approximation.
+
+Also do **not** do isolated edge forwards with full prefixes unless debugging. It usually recomputes more prefix context than leaf-path training.
+
+---
+
+# 11. Trainer microbatching
+
+Use packed leaf paths, not padded fixed `[batch, 1536]` tensors.
+
+Each packed microbatch contains several complete leaf paths.
+
+Recommended first settings:
+
+```python
+MAX_PACKED_TOKENS_INIT = 8192      # prompt + response tokens
+MAX_PACKED_TOKENS_FALLBACKS = [6144, 4096, 3072, 2048]
+```
+
+Autotune once at startup:
+
+```text
+1. Try 8192 packed tokens.
+2. If OOM, try 6144.
+3. If OOM, try 4096.
+4. Freeze the largest working value for the whole run.
+```
+
+Packing rules:
+
+```text
+- Pack by total sequence length.
+- Use sequence boundaries / cu_seqlens so examples cannot attend across each other.
+- Compute loss only on generated response tokens.
+- Include EOS token in the loss if EOS was sampled.
+- No loss on prompt tokens.
+- No loss after EOS.
+```
+
+Use:
+
+```text
+FlashAttention
+gradient checkpointing
+padding-free attention
+fused/chunked linear cross entropy
+optimizer.zero_grad(set_to_none=True)
+model.eval() with gradients enabled, so dropout stays off
+use_cache=False in trainer forward
+```
+
+The trainer forward should be deterministic. Dropout must be disabled, otherwise `π_current` logprobs will not match `π_old` at the start of the update.
+
+---
+
+# 12. Optimizer-step semantics
+
+This is important:
+
+```text
+PPO epoch = one full pass over the rollout batch.
+Optimizer steps/update = exactly one.
+Microbatches are gradient-accumulation chunks, not PPO minibatch steps.
+```
+
+So the loop is:
+
+```python
+optimizer.zero_grad(set_to_none=True)
+
+for packed_microbatch in packed_train_examples:
+    loss_sum = compute_branch_drgrpo_loss_sum(packed_microbatch)
+    (loss_sum / DENOM).backward()
+
+clip_global_grad_norm_(model.parameters(), 1.0)
+optimizer.step()
+optimizer.zero_grad(set_to_none=True)
+```
+
+Do **not** divide by:
+
+```text
+- response length
+- actual generated tokens
+- number of nonzero-advantage tokens
+- microbatch token count
+- number of microbatches
+- per-question reward std
+- per-level token count
+```
+
+Only divide by:
+
+```python
+DENOM = P * BMAX * TMAX = 262144
+```
+
+With one global optimizer step, training order does not change the mathematical update. That is exactly what we want.
+
+The PPO clip path stays in the code, even though with one global step and perfect logprob parity `ρ≈1` before the step. Keeping the PPO code path makes later multi-epoch experiments possible without rewriting the loss.
+
+---
+
+# 13. The answer to the ordering question
+
+Do **not** start with thin branches.
+
+Do **not** update after one level.
+
+Do **not** train one node’s children, step, then move deeper.
+
+The correct order is:
+
+```text
+1. Build the full tree under frozen π_old.
+2. Score all leaves.
+3. Back up all Q values.
+4. Assign every edge its advantage.
+5. Materialize complete leaf-slot paths.
+6. Train all levels together in one accumulated optimizer step.
+```
+
+Rollout batching is level-major:
+
+```text
+all roots → all 128 children → all 256 children → all leaves
+```
+
+Training batching is full-path packed:
+
+```text
+leaf paths from all prompts, shuffled/packed by length
+```
+
+The microbatch should contain complete traces, not only one level. Each trace contains token-level advantages from all levels.
+
+That gives the most signal without introducing level-order bias.
+
+---
+
+# 14. Skipping zero-signal work
+
+After backing up advantages:
+
+```python
+if abs(A_e) < 1e-8:
+    mark edge tokens as zero-loss
+```
+
+When materializing leaf-slot paths, keep the tokens for context, but set their loss mask to zero.
+
+This is equivalent to including them in the loss with zero advantage, but avoids unnecessary fused-loss work.
+
+Still divide by the same global denominator.
+
+Log:
+
+```text
+zero_adv_token_fraction
+nonzero_weighted_token_fraction
+zero_signal_prompt_fraction
+```
+
+If a prompt has all leaves correct or all leaves wrong, every edge under that prompt has zero advantage. Keep the prompt in metrics; it simply contributes no gradient.
+
+---
+
+# 15. xsglang weight lifecycle
+
+At initialization:
+
+```text
+1. Load trainer model in BF16.
+2. Build FP32 master weights from trainer weights.
+3. Initialize FP32 Adam states.
+4. Load xsglang model from the same BF16 weights.
+5. Run logprob parity check.
+```
+
+At the start of each update:
+
+```text
+xsglang weights must equal trainer BF16 weights.
+policy_version = update_id
+```
+
+During rollout:
+
+```text
+π_old is represented by xsglang weights.
+There is no separate π_old model.
+Old logprobs are stored per sampled token.
+```
+
+After optimizer step:
+
+```text
+1. FP32 master weights are updated by AdamW.
+2. BF16 trainer weights are refreshed from FP32 master.
+3. xsglang weights are refreshed in memory from BF16 trainer weights.
+4. policy_version += 1.
+```
+
+Never recompute old logprobs after the optimizer step.
+
+---
+
+# 16. Logprob parity check
+
+Run this before the first update and every 50 updates.
+
+Use a small fixed prompt and fixed token continuation.
+
+Compute token logprobs with:
+
+```text
+A. xsglang current inference weights
+B. trainer model current BF16 weights
+```
+
+Require:
+
+```text
+mean_abs_logprob_diff < 2e-3
+max_abs_logprob_diff  < 5e-2
+```
+
+If parity fails, stop. Common causes:
+
+```text
+tokenizer mismatch
+chat template mismatch
+EOS mismatch
+position-id mismatch
+RoPE scaling mismatch
+thinking-mode template mismatch
+weight-refresh mapping bug
+dropout accidentally enabled
+```
+
+---
+
+# 17. Full update loop
+
+```python
+for update_id in range(num_updates):
+
+    # -------------------------
+    # A. Prepare rollout mode
+    # -------------------------
+    trainer_model.eval()  # gradients allowed later; dropout disabled
+    offload_optimizer_state_to_cpu_pinned()   # FP32 master, Adam m, Adam v
+    xsglang.resume_weights_occupation()
+    assert xsglang.policy_version == update_id
+
+    prompt_batch = sample_8_prompts()
+    rollout_trees = []
+
+    # -------------------------
+    # B. Rollout in two waves
+    # -------------------------
+    for wave_prompts in chunks(prompt_batch, size=4):
+
+        wave_trees = []
+
+        # 1. Prefill prompts once
+        prompt_states = []
+        for q in wave_prompts:
+            s_prompt = xsglang.prefill(
+                input_ids=q.prompt_ids,
+                metadata={"prompt_id": q.id, "update_id": update_id},
+            )
+            prompt_states.append(s_prompt)
+
+        # 2. Root fork
+        active = []
+        for s_prompt in prompt_states:
+            roots = s_prompt.fork(
+                n=4,
+                seeds=root_seeds(update_id, s_prompt.prompt_id),
+            )
+            for r in roots:
+                node = new_root_node(...)
+                active.append((r, node))
+
+        # 3. Branch stages
+        for target in [128, 256, 512]:
+
+            active = xsglang.batch_generate_until_boundary(
+                continuations=active,
+                absolute_target=target,
+                max_extra_tokens=32,
+                temperature=1.0,
+                top_p=1.0,
+                return_token_ids=True,
+                return_logprobs=True,
+            )
+
+            next_active = []
+            for cont, node in active:
+
+                edge = record_edge_from_parent_to_node(
+                    tokens=cont.new_tokens,
+                    old_logprobs=cont.new_logprobs,
+                    start_gen_pos=...,
+                    end_gen_pos=...,
+                )
+
+                if cont.finished_eos:
+                    leaf = make_terminal_leaf(node, nominal_remaining_slots(node))
+                    continue
+
+                children = cont.fork(
+                    n=2,
+                    seeds=branch_seeds(update_id, node.id),
+                )
+
+                for child_cont in children:
+                    child_node = new_child_node(parent=node, target=target)
+                    next_active.append((child_cont, child_node))
+
+            active = next_active
+
+        # 4. Final leaf generation
+        active = xsglang.batch_generate_to_eos_or_max(
+            continuations=active,
+            max_absolute_generated_tokens=1024,
+            temperature=1.0,
+            top_p=1.0,
+            return_token_ids=True,
+            return_logprobs=True,
+        )
+
+        for cont, node in active:
+            edge = record_final_edge(...)
+            leaf = make_leaf(node, answer_text=cont.text)
+
+        # 5. Copy CPU records and free GPU continuations immediately
+        wave_trees = finalize_wave_records_to_cpu()
+        xsglang.free_continuations_for_wave(wave_trees)
+        rollout_trees.extend(wave_trees)
+
+        # 6. Verifier can run on CPU while next wave rolls out
+        submit_wave_to_verifier_pool(wave_trees)
+
+    # -------------------------
+    # C. Finish rewards
+    # -------------------------
+    verifier_pool.join_all()
+    attach_rewards_to_leaves(rollout_trees)
+
+    # -------------------------
+    # D. Release rollout memory
+    # -------------------------
+    xsglang.free_all_continuations()
+    xsglang.flush_or_release_kv()
+    xsglang.release_weights_occupation()
+
+    # -------------------------
+    # E. Advantage backup
+    # -------------------------
+    for tree in rollout_trees:
+        compute_nominal_slot_q_values(tree)
+        compute_leave_one_out_sibling_advantages(tree)
+
+    # -------------------------
+    # F. Materialize trainer examples
+    # -------------------------
+    train_examples = []
+    for tree in rollout_trees:
+        train_examples.extend(materialize_leaf_slot_paths(tree))
+
+    # -------------------------
+    # G. Prepare train mode
+    # -------------------------
+    prefetch_optimizer_state_to_gpu()
+    trainer_model.eval()       # dropout off, gradients still enabled
+    trainer_model.config.use_cache = False
+    optimizer.zero_grad(set_to_none=True)
+
+    # -------------------------
+    # H. One accumulated optimizer step
+    # -------------------------
+    DENOM = 8 * 32 * 1024
+
+    for mb in pack_examples(train_examples, max_packed_tokens=PACK_TOKENS):
+
+        input_ids, cu_seqlens, position_ids = mb.model_inputs()
+        target_ids = mb.target_ids()
+        old_logprobs = mb.old_logprobs()
+        advantages = mb.advantages()
+        response_mask = mb.response_mask()
+
+        current_logprobs = trainer_selected_logprobs(
+            model=trainer_model,
+            input_ids=input_ids,
+            cu_seqlens=cu_seqlens,
+            position_ids=position_ids,
+            target_ids=target_ids,
+        )
+
+        logratio = current_logprobs - old_logprobs
+        ratio = exp(logratio)
+
+        unclipped = ratio * advantages
+        clipped = clamp(ratio, 1 - 0.2, 1 + 0.2) * advantages
+
+        token_objective = minimum(unclipped, clipped)
+        token_loss = -token_objective * response_mask
+
+        # Sum, do not mean.
+        loss_sum = token_loss.sum()
+
+        # Global Dr.GRPO denominator.
+        (loss_sum / DENOM).backward()
+
+    grad_norm = clip_grad_norm_(trainer_model.parameters(), 1.0)
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+
+    # -------------------------
+    # I. Refresh BF16 + xsglang
+    # -------------------------
+    copy_fp32_master_to_bf16_params()
+    xsglang.resume_weights_occupation()
+    xsglang.refresh_weights_from_state_dict(trainer_model.state_dict())
+    xsglang.policy_version = update_id + 1
+
+    # -------------------------
+    # J. Offload optimizer state
+    # -------------------------
+    offload_optimizer_state_to_cpu_pinned()
+
+    # -------------------------
+    # K. Metrics/checkpoint
+    # -------------------------
+    log_metrics(...)
+    if update_id % 50 == 0:
+        save_checkpoint(...)
+        run_logprob_parity_check(...)
+```
+
+---
+
+# 18. Metrics to log every update
+
+Minimum metrics:
+
+```text
+train/reward_mean_slot
+train/reward_mean_unique_leaf
+train/reward_std_per_prompt
+train/accuracy_per_update
+train/accuracy_per_generated_token
+train/accuracy_per_verifier_call
+train/mean_response_length
+train/actual_generated_tree_tokens
+train/denominator_tokens
+train/tree_token_ratio
+train/unique_leaf_count
+train/nominal_leaf_slots
+```
+
+Branch metrics:
+
+```text
+branch/mixed_node_rate_all
+branch/sibling_disagreement_rate_all
+branch/mixed_node_rate_depth_0
+branch/mixed_node_rate_depth_1
+branch/mixed_node_rate_depth_2
+branch/mixed_node_rate_depth_3
+branch/mean_abs_adv_depth_0
+branch/mean_abs_adv_depth_1
+branch/mean_abs_adv_depth_2
+branch/mean_abs_adv_depth_3
+branch/zero_adv_token_fraction
+branch/nonzero_weighted_token_fraction
+```
+
+Optimization metrics:
+
+```text
+opt/loss_sum_before_div
+opt/loss
+opt/grad_norm
+opt/lr
+opt/clip_fraction
+opt/approx_kl_old_current
+opt/mean_logratio
+opt/max_abs_logratio
+opt/entropy_sampled_tokens
+```
+
+Systems metrics:
+
+```text
+sys/xsglang_decode_tokens_per_sec
+sys/xsglang_branch_spawn_ms
+sys/xsglang_peak_kv_tokens
+sys/xsglang_peak_gpu_mem
+sys/train_tokens_per_sec
+sys/train_peak_gpu_mem
+sys/optimizer_offload_seconds
+sys/weight_refresh_seconds
+sys/verifier_seconds
+```
+
+The most important Branch-Dr.GRPO diagnostic is:
+
+```text
+branch/sibling_disagreement_rate
+```
+
+If sibling Q values rarely differ, the method collapses toward ordinary terminal-reward training with extra structure but little local signal.
+
+---
+
+# 19. Baselines
+
+Run exactly these two:
+
+| Method         | Rollout                    | Leaves/prompt | Advantage                  | Denominator |
+| -------------- | -------------------------- | ------------: | -------------------------- | ----------: |
+| Flat Dr.GRPO   | 32 independent completions |            32 | `R_i - mean(R)`            | `P×32×1024` |
+| Branch-Dr.GRPO | fixed 4×2×2×2 tree         |            32 | sibling LOO edge advantage | `P×32×1024` |
+
+Keep identical:
+
+```text
+model
+prompt batches
+verifier
+prompt template
+max generation
+temperature
+top_p
+optimizer
+LR
+clip
+grad clip
+KL coefficient
+PPO epochs
+optimizer steps/update
+evaluation suite
+```
+
+Flat baseline uses the same trainer, same packed leaf-path representation, and same global denominator. Only the rollout structure and advantage assignment change.
+
+---
+
+# 20. Evaluation
+
+Every 50 updates:
+
+```text
+heldout_eval_prompts = fixed set
+temperature = 0 for greedy
+max_gen = 1024
+num_samples = 1
+```
+
+Log:
+
+```text
+eval/greedy_accuracy
+eval/mean_response_length
+eval/invalid_format_rate
+eval/repetition_rate
+```
+
+Every 200 updates:
+
+```text
+temperature = 1.0
+top_p = 1.0
+samples_per_prompt = 8
+```
+
+Log:
+
+```text
+eval/pass_at_8
+eval/mean_reward_sampled
+eval/response_length_sampled
+```
+
+Do not use training prompts for the headline eval.
+
+---
+
+# 21. Stability rules
+
+Hard-stop conditions:
+
+```text
+NaN loss
+NaN grad
+logprob parity failure
+weight refresh failure
+verifier crash rate > 1%
+xsglang policy_version mismatch
+```
+
+Skip update and reload last checkpoint if:
+
+```text
+grad_norm is NaN or inf
+mean_abs_logprob_diff parity check fails
+> 5% of old_logprobs are inf/nan
+```
+
+Do not silently continue after a weight-sync bug. That will poison the run.
+
+Repetition guard for logging only:
+
+```text
+If a completion has 200 repeated identical tokens, mark repetition=True.
+Do not alter reward in v1.
+```
+
+Do not add presence penalty in the main run. Qwen’s public model card suggests different inference settings for normal Qwen3 thinking/non-thinking deployment, but this experiment intentionally keeps temperature 1 and top_p 1 to stay close to the Dr.GRPO recipe. ([Hugging Face][3])
+
+---
+
+# 22. Things not to do in v1
+
+Do not use adaptive branching.
+
+Do not use forced first tokens.
+
+Do not use process rewards.
+
+Do not use reward std normalization.
+
+Do not normalize by actual response length.
+
+Do not normalize by actual tree-generated tokens.
+
+Do not normalize each level to equal weight.
+
+Do not train one level, optimizer-step, then train another level.
+
+Do not use detached xsglang KV for trainer logprobs.
+
+Do not keep a reference model loaded when KL coefficient is 0.
+
+Do not retokenize model text for training.
+
+Do not refresh xsglang weights through disk checkpoints.
+
+Do not use LoRA for the main full-finetune run.
+
+Do not drop FP32 master weights at LR 1e-6.
+
+---
+
+# 23. Smoke test
+
+Before the main run, run this exactly.
+
+| Item                   |               Value |
+| ---------------------- | ------------------: |
+| Prompts/update         |                   4 |
+| Rollout wave size      |                   4 |
+| Leaves/prompt          |                  16 |
+| Root samples           |                   4 |
+| Branch points          |            128, 512 |
+| Max generation         |                1024 |
+| Leaf slots/update      |                  64 |
+| Optimizer steps/update |                   1 |
+| Denominator            | `4×16×1024 = 65536` |
+| Updates                |             200–500 |
+
+Tree:
+
+```text
+4 roots
+→ branch to 8 at ~128
+→ branch to 16 at ~512
+→ finish at 1024
+```
+
+Smoke-test pass criteria:
+
+```text
+xsglang/tokenizer/trainer logprob parity passes
+tree has correct nominal slot counts
+edge weights are correct
+global denominator is constant
+zero-adv prompts produce zero gradient contribution
+nonzero branch nodes produce nonzero gradient
+optimizer step changes xsglang generations after refresh
+flat Dr.GRPO baseline runs with same trainer
+no KV leak across 200 updates
+```
+
+---
+
+# 24. Main experiment
+
+After smoke passes:
+
+| Item                                  |                                    Value |
+| ------------------------------------- | ---------------------------------------: |
+| Prompts/update                        |                                        8 |
+| Rollout wave size                     |                                        4 |
+| Waves/update                          |                                        2 |
+| Leaves/prompt                         |                                       32 |
+| Root samples                          |                                        4 |
+| Branch points                         |                            128, 256, 512 |
+| Max generation                        |                                     1024 |
+| Nominal leaf slots/update             |                                      256 |
+| Actual branch generated tokens/update |               ≤176128 before EOS effects |
+| Denominator/update                    |                                   262144 |
+| PPO epochs                            |                                        1 |
+| Optimizer steps/update                |                                        1 |
+| LR                                    |                                     1e-6 |
+| Clip                                  |                                      0.2 |
+| Grad clip                             |                                      1.0 |
+| KL                                    |                                        0 |
+| Precision                             | BF16 trainer/inference, FP32 Adam/master |
+
+Run:
+
+```text
+Branch-Dr.GRPO: 2k–10k updates
+Flat Dr.GRPO:   same prompt schedule, same update count
+```
+
+Primary comparison:
+
+```text
+eval/greedy_accuracy vs update
+eval/greedy_accuracy vs generated rollout tokens
+eval/pass_at_8 vs generated rollout tokens
+train/accuracy_per_verifier_call
+train/mean_response_length
+branch/sibling_disagreement_rate
+```
+
+---
+
+# 25. One-sentence implementation definition
+
+**Branch-Dr.GRPO is Dr.GRPO with the terminal group-relative advantage replaced by a leave-one-out sibling advantage on a fixed xsglang-generated completion tree; the logical loss is edge-weighted by descendant nominal leaf slots, the physical trainer uses exact leaf-slot materialization, and the update uses one globally normalized optimizer step with denominator `P×Bmax×Tmax`.**
+
+[1]: https://arxiv.org/html/2503.20783v1 "Understanding R1-Zero-Like Training: A Critical Perspective"
+[2]: https://github.com/sail-sg/understand-r1-zero "GitHub - sail-sg/understand-r1-zero: Understanding R1-Zero-Like Training: A Critical Perspective · GitHub"
+[3]: https://huggingface.co/Qwen/Qwen3-4B "https://huggingface.co/Qwen/Qwen3-4B"
+[4]: https://sgl-project.github.io/ "SGLang Documentation — SGLang"
