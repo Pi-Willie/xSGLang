@@ -1,10 +1,10 @@
 {
   "active_run_id": null,
-  "phase": "phase1_trainer_step_ready_h100_unavailable",
+  "phase": "phase2_sft_done_preempted_awaiting_capacity",
   "policy": "branch_grpo_only",
   "engine_branch": "branch-grpo-h100-hardening",
   "engine_commit": "36ec59b",
-  "h100_status": "terminated_start_stockout_us-central1-a",
+  "h100_status": "TERMINATED_preempted_us-central1-a_awaiting_start",
   "sft_source_local": "/Users/wilhelmhedenskog/qagent/math/math-fireworks.jsonl",
   "critical_artifacts_local": [
     "experiments/data/sft_math_fireworks.jsonl",
@@ -29,5 +29,12 @@
     "xsglang runtime logprobs are selected-token old logprobs aligned to emitted_token_ids; run benchmark/validate_runtime_logprobs.py on H100 before RL.",
     "Branch-GRPO rollout trees are built by python/minisgl/branch_grpo/rollout.py and locally validated with benchmark/validate_branch_rollout_builder.py.",
     "Trainer-side exact selected-logprob gather, constant-denominator accumulation, and FP32 master AdamW are in python/minisgl/branch_grpo/trainer.py and locally validated with benchmark/validate_branch_trainer_step.py."
-  ]
+  ],
+  "sft_model_h100": "experiments/sft/qwen3_4b_base_v1/model (on boot disk, survives STOP)",
+  "sft_eval_512": {
+    "format_valid": 0.309,
+    "note": "truncated at 512; verbose SFT targets (p90~1044 tok)"
+  },
+  "sft_model_local_pull": "INCOMPLETE (3.85/7.5GB, scp dropped); re-pull after restart",
+  "loop_code": "python/minisgl/branch_grpo/loop.py + experiments/scripts/run_branch_grpo.py (committed 28ee274, pushed origin)"
 }
