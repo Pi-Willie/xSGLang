@@ -14,7 +14,8 @@ class BranchGRPOConfig:
     branch_targets: Tuple[int, ...]
     max_generation_tokens: int
     prompt_max_tokens: int = 512
-    boundary_lookahead: int = 32
+    boundary_lookahead: int = 48  # max tokens to defer a fork past the nominal segment length
+    confidence_threshold: float = 0.6  # fork only where top-1 prob <= this (low-confidence)
     temperature: float = 1.0
     top_p: float = 1.0
     ppo_clip: float = 0.2

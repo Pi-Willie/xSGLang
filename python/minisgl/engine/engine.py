@@ -54,6 +54,7 @@ class ForwardOutput:
     topk_ids_cpu: torch.Tensor | None = None
     topk_logprobs_cpu: torch.Tensor | None = None
     logprobs_cpu: torch.Tensor | None = None
+    max_prob_cpu: torch.Tensor | None = None  # top-1 token probability per sequence (for branching)
 
 
 @dataclass(frozen=True)
@@ -444,6 +445,12 @@ class Engine:
                     non_blocking=True,
                 )
             next_tokens_cpu = next_tokens_gpu.to("cpu", non_blocking=True)
+        # Top-1 token probability (confidence) per sequence: a free batched max-reduction over
+        # the log_softmax already computed for logprobs. Used by confidence-gated branching to
+        # fork only at low-confidence positions. No extra forward, no per-token Python.
+        max_prob_cpu = None
+        if batch.sample_next_token and active_logprobs is not None:
+            max_prob_cpu = active_logprobs.max(dim=-1).values.exp().to("cpu", non_blocking=True)
         elif batch.is_prefill:
             # Prefill-only blocks warm the KV cache without consuming the first decode slot.
             for req in batch.reqs:
@@ -458,6 +465,7 @@ class Engine:
             topk_ids_cpu=topk_ids_cpu,
             topk_logprobs_cpu=topk_logprobs_cpu,
             logprobs_cpu=logprobs_cpu,
+            max_prob_cpu=max_prob_cpu,
             copy_done_event=copy_done_event,
         )
 

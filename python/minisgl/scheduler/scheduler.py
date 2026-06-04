@@ -1070,6 +1070,21 @@ class Scheduler(SchedulerIOMixin):
                         stop_reasons[req.continuation_id] = req.stop_reason
                         self.decode_manager.remove_req(req)
 
+                    # Confidence-gated branch boundary: once past min_new_tokens, stop at the
+                    # first low-confidence token (top-1 prob <= threshold). max_prob_cpu is a
+                    # batched GPU reduction; this per-req read is just a scalar compare.
+                    elif (
+                        block.branch_confidence_threshold is not None
+                        and step_idx + 1 >= block.min_new_tokens
+                        and forward_output.max_prob_cpu is not None
+                        and float(forward_output.max_prob_cpu[batch_idx])
+                        <= block.branch_confidence_threshold
+                    ):
+                        req.status = ContinuationStatus.PAUSED
+                        req.stop_reason = "branch_boundary"
+                        stop_reasons[req.continuation_id] = req.stop_reason
+                        self.decode_manager.remove_req(req)
+
                 active = [
                     req
                     for req in active

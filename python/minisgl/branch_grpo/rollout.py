@@ -117,26 +117,44 @@ def build_branch_rollout_tree(
         edge_id = 0
         node_id = 1
         leaf_id = 0
-        targets = tuple(config.branch_targets) + (config.max_generation_tokens,)
-        for target in targets:
+        # Segment-relative stages keep frontier continuations synchronized (all start each
+        # stage at block-relative position 0), so one batched run_block per stage works even
+        # though confidence-gated forks land at staggered absolute positions.
+        prev_target = 0
+        seg_lens = []
+        for t in config.branch_targets:
+            seg_lens.append(int(t) - prev_target)
+            prev_target = int(t)
+        stages = [(seg, False) for seg in seg_lens] + [(None, True)]
+        lookahead = int(config.boundary_lookahead)
+        threshold = float(config.confidence_threshold)
+        for seg_len, is_final in stages:
             if not frontier:
                 break
-            if any(active.generated_len > target for active in frontier):
-                raise ValueError(f"frontier has already passed target {target}")
-            max_new_tokens = max(target - active.generated_len for active in frontier)
-            if max_new_tokens <= 0:
-                raise ValueError(f"branch target {target} did not advance generation")
-
-            result = llm.run_block(
-                BlockSpec(
-                    continuation_ids=tuple(
-                        active.continuation.continuation_id for active in frontier
-                    ),
+            if is_final:
+                # Generate every leaf to EOS / the absolute generation budget. Cap by the most
+                # advanced continuation so none exceeds max_generation_tokens; no branching here.
+                max_new_tokens = max(
+                    1, config.max_generation_tokens - max(a.generated_len for a in frontier)
+                )
+                block = BlockSpec(
+                    continuation_ids=tuple(a.continuation.continuation_id for a in frontier),
                     max_new_tokens=max_new_tokens,
                     stop_on_eos=True,
                     request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
                 )
-            )
+            else:
+                # Generate the nominal segment, then fork at the first low-confidence token
+                # (top-1 prob <= threshold) within `lookahead`, else force a fork at the cap.
+                block = BlockSpec(
+                    continuation_ids=tuple(a.continuation.continuation_id for a in frontier),
+                    max_new_tokens=seg_len + lookahead,
+                    min_new_tokens=seg_len,
+                    stop_on_eos=True,
+                    branch_confidence_threshold=threshold,
+                    request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
+                )
+            result = llm.run_block(block)
             by_continuation = {
                 item.continuation_id: item for item in result.continuation_results
             }
@@ -166,13 +184,14 @@ def build_branch_rollout_tree(
                 node_id += 1
 
                 finish_reason = continuation_result.stop_reason or "unknown"
-                is_final_target = target == config.max_generation_tokens
-                reached_target = end_gen_pos >= target
-                terminal = (
+                hit_eos = (
                     continuation_result.final_status is ContinuationStatus.FINISHED
-                    or is_final_target
-                    or not reached_target
+                    and finish_reason == "eos"
                 )
+                # Leaf iff this is the final stage or the trace ended (EOS). A confidence
+                # branch-boundary / forced (block_limit / max_tokens) stop in a branch stage is
+                # non-terminal -> it forks.
+                terminal = is_final or hit_eos
                 tree.nodes[current_node_id] = Node(
                     id=current_node_id,
                     prompt_id=prompt_id,

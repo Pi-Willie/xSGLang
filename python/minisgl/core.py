@@ -235,6 +235,10 @@ class BlockSpec:
     min_new_tokens: int = 0
     stop_on_eos: bool = True
     stop_strings: Tuple[str, ...] = ()
+    # Confidence-gated branching: once min_new_tokens is reached, stop a continuation
+    # (stop_reason="branch_boundary") at the first decode step whose top-1 token probability
+    # is <= this threshold, so forks land only on low-confidence positions. None disables it.
+    branch_confidence_threshold: float | None = None
     pause_on_finish: bool = True
     request_outputs: Tuple[str, ...] = ()
     hook_program: HookProgram | None = None
