@@ -566,3 +566,34 @@ level-major batching (the main speed lever) needs ~4x KV concurrency which 1536 
 (128 leaves x 1536 >> KV pool). So speed (objective 2) and length (objective 3) trade off on
 this 80GB GPU. Plan: get v2 accuracy result (does 1536+conf-branch+2e-6 beat 0.262?), then
 demonstrate cross-prompt batching speedup on the KV-safe 1024 config as the speed deliverable.
+
+## 2026-06-04 - Pivot to STRONGER BASE for 0.5+ target (user raised the bar)
+
+New directive: aim 0.5+ greedy accuracy & emergent capability, not incremental. Work past 1am.
+
+Diagnosis (all under the NEW math-aware verifier, max_gen 1536, N=256):
+- SFT base (1000 fireworks): acc 0.238, fmt 0.648.
+- v2 RL best (conf-branch+1536+lr2e-6 on that base): acc 0.309, fmt 0.750. RL added +0.07 then
+  PLATEAUED (u0 0.242 -> u25 0.293 -> u50 0.262, within noise) AND compressed length
+  (1047->853) -- the binary-reward compression the user flagged. => the 1000-example base is
+  the CEILING; RL elicitation can't reach 0.5 from it.
+- Verifier lift was small (~+0.016 on v2-best) because 78% of held-out answers are integers
+  that exact-match already handled; math_verify recovers fractions/decimals/var-prefix/latex
+  (the ~22% non-integer). Kept (cleaner reward + fair measurement), validated 0 false-positives
+  /498, 500/500 exact recall.
+
+LEVERS for 0.5 (stacked):
+1. Math-aware verifier (math_verify + string fallback). DONE/deployed.
+2. STRONGER BASE: built 12k SFT examples from OpenR1-Math `generations` -- verified-correct
+   (correctness_math_verify) R1-distilled long-CoT <think> traces, reformatted to our schema,
+   deduped vs held-out (build_openr1_sft.py: scanned 86k -> 12k; mean ~1170 tok, p90 ~1630).
+   This is ~12x more + far richer reasoning than the 1000-example fireworks base, and teaches
+   LONGER reasoning (aligns with objective 3). SFTing Qwen3-4B-Base on it (max_len 2048, lr 1e-5,
+   2 epochs, ~1.5h, preemption-safe resume). -> experiments/sft/qwen3_4b_r1_v1.
+3. v3 RL on the stronger base: conf-branch + long max_gen + math verifier, train hard.
+4. Cross-prompt level-major rollout (build_branch_rollout_wave, --wave-rollout) built for the
+   speed objective; KV-bound at long max_gen so demo on the 1024 config.
+
+Operational: math_verify pip-installed on H100. SFT script now has --resume/--save-every
+(warm-restart). Note recurring ~1-commit fetch lag on the H100 -> always git fetch+reset twice
+or verify the file after deploy.
