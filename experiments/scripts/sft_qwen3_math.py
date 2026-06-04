@@ -231,7 +231,17 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     rows = _read_jsonl(Path(args.train_jsonl))
     train_rows, eval_rows = split_rows(rows, eval_fraction=args.eval_fraction, seed=args.seed)
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    # Preemption-safe resume: warm-restart from <out>/ckpt (weights + step), fresh optimizer.
+    resume_dir = output_dir / "ckpt"
+    start_model = args.model
+    resumed_step = 0
+    if args.resume and (resume_dir / "config.json").exists():
+        start_model = str(resume_dir)
+        sp = resume_dir / "ckpt_step.json"
+        if sp.exists():
+            resumed_step = int(json.loads(sp.read_text()).get("global_step", 0))
+        print(f"[sft-resume] from {start_model} at step {resumed_step}", flush=True)
+    tokenizer = AutoTokenizer.from_pretrained(start_model, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     train_features = build_features(
@@ -245,7 +255,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("No SFT train features were built")
 
     model = AutoModelForCausalLM.from_pretrained(
-        args.model,
+        start_model,
         dtype=torch.bfloat16,
         trust_remote_code=True,
         attn_implementation=args.attn_implementation,
@@ -269,10 +279,10 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         weight_decay=args.weight_decay,
     )
     metrics_path = output_dir / "sft_metrics.jsonl"
-    global_step = 0
+    global_step = resumed_step
     started = time.perf_counter()
     optimizer.zero_grad(set_to_none=True)
-    with metrics_path.open("w", encoding="utf-8") as metrics_file:
+    with metrics_path.open("a" if resumed_step else "w", encoding="utf-8") as metrics_file:
         for epoch in range(args.epochs):
             for step, batch in enumerate(tqdm(loader, desc=f"epoch {epoch + 1}")):
                 batch = {key: value.cuda(non_blocking=True) for key, value in batch.items()}
@@ -298,6 +308,12 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 }
                 metrics_file.write(json.dumps(record) + "\n")
                 metrics_file.flush()
+                if args.save_every and global_step % args.save_every == 0:
+                    resume_dir.mkdir(parents=True, exist_ok=True)
+                    model.save_pretrained(resume_dir, safe_serialization=True)
+                    tokenizer.save_pretrained(resume_dir)
+                    (resume_dir / "ckpt_step.json").write_text(json.dumps({"global_step": global_step}))
+                    print(f"[sft-ckpt] step {global_step}", flush=True)
                 if args.max_steps and global_step >= args.max_steps:
                     break
             if args.max_steps and global_step >= args.max_steps:
@@ -358,6 +374,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--eval-limit", type=int, default=64)
     parser.add_argument("--eval-max-new-tokens", type=int, default=512)
+    parser.add_argument("--resume", action="store_true", help="warm-restart from <output-dir>/ckpt")
+    parser.add_argument("--save-every", type=int, default=200, help="checkpoint <out>/ckpt every N optim steps")
     args = parser.parse_args()
     if not (0.0 < args.eval_fraction < 0.5):
         raise ValueError("--eval-fraction must be between 0 and 0.5")
