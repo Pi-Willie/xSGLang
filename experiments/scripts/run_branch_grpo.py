@@ -29,7 +29,9 @@ if torch.cuda.is_available():
 
 from transformers import AutoConfig, AutoModelForCausalLM  # noqa: E402
 
-from minisgl.branch_grpo.config import BranchGRPOConfig, main_config, smoke_config  # noqa: E402
+from minisgl.branch_grpo.config import (  # noqa: E402
+    BranchGRPOConfig, main_config, main_v2_config, smoke_config,
+)
 from minisgl.branch_grpo.data import iter_openr1_train_rows  # noqa: E402
 from minisgl.branch_grpo.loop import BranchGRPOLoop  # noqa: E402
 from minisgl.llm import LLM  # noqa: E402
@@ -52,7 +54,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def make_config(name: str) -> BranchGRPOConfig:
-    return smoke_config() if name == "smoke" else main_config()
+    return {"smoke": smoke_config, "main": main_config, "main_v2": main_v2_config}[name]()
 
 
 def build_loop(args: argparse.Namespace) -> BranchGRPOLoop:
@@ -248,7 +250,7 @@ def _save_run_state(out: Path, next_update: int, best_acc: float) -> None:
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model", required=True)
-    p.add_argument("--config", choices=["smoke", "main"], default="smoke")
+    p.add_argument("--config", choices=["smoke", "main", "main_v2"], default="smoke")
     p.add_argument("--output-dir", required=True)
     p.add_argument("--heldout", default="experiments/data/openr1_heldout/openr1_heldout_eval.jsonl")
     p.add_argument("--health-gate", action="store_true")

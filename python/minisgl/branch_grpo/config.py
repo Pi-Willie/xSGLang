@@ -82,3 +82,20 @@ def main_config() -> BranchGRPOConfig:
         branch_targets=(128, 256, 512),
         max_generation_tokens=1024,
     )
+
+
+def main_v2_config() -> BranchGRPOConfig:
+    # v2 bets vs the 0.262 baseline: confidence-gated branching (mandated), longer outputs
+    # (max_gen 1024->1536, fewer truncated correct traces), faster climb (lr 1e-6->2e-6).
+    return BranchGRPOConfig(
+        name="main_v2",
+        prompts_per_update=8,
+        rollout_wave_prompts=4,
+        root_samples=4,
+        branch_factor=2,
+        branch_targets=(128, 256, 512),
+        max_generation_tokens=1536,
+        confidence_threshold=0.6,
+        boundary_lookahead=48,
+        lr=2e-6,
+    )
