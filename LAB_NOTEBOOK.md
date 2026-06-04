@@ -493,3 +493,26 @@ RL fixes format. Re-SFT for conciseness is the fallback if RL does not improve i
 MAIN run launched: `experiments/runs/branch_main`, target 250 updates, eval+ckpt cadence
 25/10. ~64s rollout + ~30s train per update (prompt-major). u0: reward_mean_slot 0.047,
 mixed-node 0.11. Training to noise-aware plateau under the preemption watcher.
+
+## 2026-06-04 - Stable MAIN config after memory tuning (KV-heavy / training-lean)
+
+The MAIN 32-leaf tree fought the single-H100 memory budget. Sequence of failures + fixes:
+- 4096 pack -> train-step OOM (78 GB).
+- 3072 pack -> OOM at u6 on a heavy update.
+- Memory-efficient logprob (logsumexp instead of full-vocab log_softmax) committed.
+- 2048 pack + memory_ratio 0.28 -> KV cache EXHAUSTED during rollout (32-leaf tree needs a big
+  KV pool; 0.28 gave only ~30k tokens).
+- Realisation: KV pool is reserved statically at init (unavailable to training). With these long
+  sequences, training is ~1 example/microbatch => lean (~18-25 GB). So the right config is
+  KV-HEAVY + training-LEAN: max_packed_tokens 1024 + memory_ratio 0.60.
+- Result: KV pool 170823 tokens (23.5 GB), u0 peak 60 GB, 43 GB resident, no OOM/exhaustion.
+  Single-instance guard added to ~/launch_train.sh (a double-launch race with the recovery
+  monitor had caused mutual crashes). checkpoint_every 5; best-model checkpoint at u0 works.
+
+Engine-config sensitivity: greedy held-out accuracy is deterministic for a FIXED engine config
+but shifts with batch/CUDA-graph numerics (argmax flips): baseline was 0.227 under the gate
+config, 0.188 under this run's config. Within 2 sigma (0.052). For internal consistency the
+MAIN run is compared against its OWN u0 = 0.188; band 2 sigma ~ 0.05 (real improvement > ~0.24).
+
+MAIN run (final stable config) live: experiments/runs/branch_main, target 250 updates,
+eval/ckpt 25/5, under preemption + crash auto-recovery monitors.
