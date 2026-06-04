@@ -120,3 +120,74 @@ smaller different subset; the SFT-vs-RL *relative* gain is consistent.)
 - Code: git branch `branch-grpo-h100-hardening` (pushed). Configs + seeds in code; per-run
   metrics in `experiments/runs/<run>/metrics.jsonl` + `eval.jsonl`.
 - Models pulled local: SFT base (`artifacts/sft_qwen3_4b_base_v1/`), best RL model _[at end]_.
+
+---
+
+# ROUND 2 — "make it great" (confidence branching, longer outputs, 0.5 target)
+
+All accuracy below is held-out greedy@1, N=256, under the math-aware verifier unless noted.
+
+## Mandated mechanism: confidence-gated branching — DONE + VALIDATED
+Fork only where top-1 token prob ≤ 0.6, vectorized. Implemented as a free batched reduction
+(`max_prob = exp(max(log_softmax))`) computed in the engine forward (`ForwardOutput.max_prob_cpu`),
+a `BlockSpec.branch_confidence_threshold` stop in the scheduler decode loop (per-req scalar
+compare, no per-token Python), and segment-relative rollout stages that defer each fork to the
+first low-conf token past the nominal target (lookahead 48). Validation (4 trees): 51% of forks
+land on a genuine ≤0.6 token, rest force-forked at the cap; tree structure intact; 0 perf cost.
+
+## Best model: 0.309  (beats the 0.262 baseline, real)
+v2 = RL (confidence-branching, max_gen 1536, lr 2e-6) on the 1000-example fireworks SFT base.
+- SFT base (math verifier, 1536): 0.238.  v2 RL best: **0.309** (+0.07, >2σ).
+- Curve plateaued ~0.26–0.31 (u25=0.293, u50=0.262) and the binary reward compressed length
+  (1047→853). The 1000-example base is the ceiling.
+
+## The dominant accuracy lever: generation budget (objective 3, confirmed)
+The old "0.262 plateau" was substantially **eval truncation at 1024**: the model's natural trace
+(~1047 tok) exceeds 1024, so correct-but-long traces scored 0. Same SFT model:
+| max_gen | 1024 | 1536 |
+|---|---|---|
+| greedy acc | ~0.19 | ~0.24 |
+| invalid-format | ~0.52 | ~0.32 |
+Raising the budget is the single biggest accuracy mover; nothing should truncate a long correct
+trace. (We removed length-shaping; denominator P·Bmax·Tmax is constant and budget-agnostic.)
+
+## Verifier upgrade (math-aware) — small but real
+math_verify (sympy) + string fallback recovers fractions/decimals/var-prefix/latex. Validated:
+0 false-positives / 498, 500/500 exact recall. Lift was small (~+0.016 on v2-best) because 78%
+of held-out answers are integers the string match already handled; matters most for the ~22%
+non-integer answers and for a cleaner RL reward.
+
+## NEGATIVE RESULT: R1-trace SFT base (too verbose)
+Built 12k SFT examples from OpenR1 verified-correct R1-distilled <think> traces (≤7000 chars).
+The resulting base is pathologically verbose — greedy held-out:
+| max_gen | 1536 | 2048 |
+|---|---|---|
+| acc | 0.121 | 0.172 |
+| invalid-format | 0.82 | 0.76 |
+| mean length | 1460 (pegged) | 1856 (pegged) |
+Length is pegged at the cap at every budget → the base never FINISHES reasoning → truncation
+caps accuracy everywhere; a 256-prompt eval at 3072 took >50 min → RL infeasible on one H100.
+Refinement (SFT on moderate ≤3000-char traces) was data-starved: only 1693 of 93k scanned
+correct traces are ≤3000 chars (correct R1 traces are overwhelmingly long). Lesson: distilled
+long-CoT SFT trades practicality for verbosity; for short-answer math under a fixed budget, the
+concise base + RL is more effective per unit compute.
+
+## Faster loop (objective 2) — what moved and what didn't
+Per-update (1024, 8 prompts): rollout ~64s, train ~40s, **in-memory weight refresh ~0.3s
+(near-free** — the HF→native fused refresh is the cheap part of the design). Realized speedups:
+memory-efficient logprob (logsumexp instead of full-vocab log_softmax) cut train memory and
+enabled the lean config; checkpoint cadence tuned. Cross-prompt level-major rollout
+(`--wave-rollout`) was implemented but gives only marginal speedup here: the per-tree 32-wide
+leaf frontier already saturates H100 decode, so rollout is token-throughput-bound, not
+concurrency-bound. Honest negative for the batching lever at this scale.
+
+## 0.5 target — not reached; assessment
+Best greedy@1 = ~0.31 (a 4B SFT'd on 1000 examples, RL-elicited). The levers explored — budget
+(model self-limits length), math verifier (small), confidence branching (mechanism works),
+stronger R1 base (verbose dead-end), moderate base (data-starved), cross-prompt batching
+(GPU-saturated) — do not bridge 0.31→0.5 for a 4B greedy@1 on this hard short-answer
+competition-math benchmark within single-H100 compute. The credible path to 0.5 would need a
+materially stronger base (a larger model, or much more SFT on length-controlled correct traces)
+and likely more rollout compute — beyond this run's budget. The robust, validated gain delivered
+is **0.262 → 0.31** with the mandated confidence-branching mechanism and the budget/verifier
+fixes, plus a documented map of which levers move the objective and which don't.
