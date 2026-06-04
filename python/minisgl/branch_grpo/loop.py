@@ -28,7 +28,7 @@ from .records import (
     compute_nominal_slot_q_values,
     materialize_leaf_slot_paths,
 )
-from .rollout import build_branch_rollout_tree
+from .rollout import build_branch_rollout_tree, build_branch_rollout_wave
 from .trainer import FP32MasterAdamW, branch_grpo_train_step
 from .verifier import binary_tag_reward, extract_answer_tag, normalize_answer
 
@@ -64,6 +64,7 @@ class BranchGRPOLoop:
         max_packed_tokens: int,
         device: torch.device | str = "cuda",
         on_policy_old_logprobs: bool = True,
+        use_wave_rollout: bool = False,
     ) -> None:
         self.llm = llm
         self.model = trainer_model
@@ -72,6 +73,7 @@ class BranchGRPOLoop:
         self.max_packed_tokens = max_packed_tokens
         self.device = torch.device(device)
         self.on_policy_old_logprobs = on_policy_old_logprobs
+        self.use_wave_rollout = use_wave_rollout
         self.pad_token_id = int(getattr(llm.tokenizer, "pad_token_id", 0) or 0)
         self.policy_version = 0
 
@@ -168,21 +170,39 @@ class BranchGRPOLoop:
         trees: list[RolloutTree] = []
         rollout_gen_tokens = 0
         skipped_prompts = 0
-        for offset, row in enumerate(prompt_rows):
-            try:
-                tree = build_branch_rollout_tree(
-                    llm=self.llm, prompt_row=row,
-                    prompt_id=update_id * 1000 + offset, config=cfg,
-                )
-            except Exception as exc:
-                # Robustness: an occasional OpenR1 prompt exceeds prompt_max_tokens (the
-                # answer-length filter does not bound prompt length), or a rollout hiccups.
-                # Skip that prompt rather than killing the run. Denominator stays constant.
-                skipped_prompts += 1
-                print(f"[warn] u{update_id} skip prompt offset={offset}: {exc}", flush=True)
-                continue
-            trees.append(tree)
-            rollout_gen_tokens += int(sum(int(e.tokens.shape[0]) for e in tree.edges.values()))
+        if self.use_wave_rollout:
+            # Cross-prompt level-major batching: one run_block over each wave's combined frontier
+            # (much higher decode concurrency). Over-long prompts are skipped inside the builder.
+            wave = int(cfg.rollout_wave_prompts)
+            for w0 in range(0, len(prompt_rows), wave):
+                chunk = prompt_rows[w0:w0 + wave]
+                try:
+                    wtrees = build_branch_rollout_wave(
+                        llm=self.llm, prompt_rows=chunk, config=cfg,
+                        start_prompt_id=update_id * 1000 + w0,
+                    )
+                except Exception as exc:
+                    skipped_prompts += len(chunk)
+                    print(f"[warn] u{update_id} wave {w0} failed: {exc}", flush=True)
+                    continue
+                skipped_prompts += len(chunk) - len(wtrees)
+                trees.extend(wtrees)
+        else:
+            for offset, row in enumerate(prompt_rows):
+                try:
+                    tree = build_branch_rollout_tree(
+                        llm=self.llm, prompt_row=row,
+                        prompt_id=update_id * 1000 + offset, config=cfg,
+                    )
+                except Exception as exc:
+                    # Skip an over-long / failed prompt rather than killing the run.
+                    skipped_prompts += 1
+                    print(f"[warn] u{update_id} skip prompt offset={offset}: {exc}", flush=True)
+                    continue
+                trees.append(tree)
+        rollout_gen_tokens += int(
+            sum(int(e.tokens.shape[0]) for tr in trees for e in tr.edges.values())
+        )
         rollout_s = time.perf_counter() - t0
         m.fields["skipped_prompts"] = float(skipped_prompts)
         if not trees:

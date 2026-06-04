@@ -78,6 +78,7 @@ def build_loop(args: argparse.Namespace) -> BranchGRPOLoop:
         llm=llm, trainer_model=model, hf_config=hf_config, config=cfg,
         max_packed_tokens=args.max_packed_tokens, device="cuda",
         on_policy_old_logprobs=not args.use_xsglang_old_logprobs,
+        use_wave_rollout=args.wave_rollout,
     )
 
 
@@ -266,6 +267,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--attn-implementation", default="sdpa")
     p.add_argument("--use-xsglang-old-logprobs", action="store_true")
     p.add_argument("--resume", action="store_true", help="resume from <output-dir>/last_model + run_state")
+    p.add_argument("--wave-rollout", action="store_true", help="cross-prompt level-major rollout batching")
     p.add_argument("--parity-mean-max", type=float, default=0.05)
     p.add_argument("--parity-max-max", type=float, default=0.3)
     p.add_argument("--mem-growth-gb", type=float, default=3.0)

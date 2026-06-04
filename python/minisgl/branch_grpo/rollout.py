@@ -57,6 +57,207 @@ def _ground_truth(row: dict[str, Any]) -> Any:
     raise KeyError("rollout row must include answer or normalized_answer")
 
 
+def _stages(config: BranchGRPOConfig):
+    """Segment lengths for each branch stage + a final leaf stage (None)."""
+    prev = 0
+    segs = []
+    for t in config.branch_targets:
+        segs.append(int(t) - prev)
+        prev = int(t)
+    return [(s, False) for s in segs] + [(None, True)]
+
+
+def _open_prompt_tree(llm, prompt_row, prompt_id, config, params):
+    """Open a prompt, spawn root_samples children; returns (tree, continuations, root ActivePaths)."""
+    prompt = str(prompt_row["prompt"])
+    root = llm.open_continuation(prompt, params)
+    prompt_token_ids = np.asarray(
+        root.materialize_input_ids()[: root.prompt_len].tolist(), dtype=np.int32
+    )
+    if prompt_token_ids.shape[0] > config.prompt_max_tokens:
+        try:
+            llm.free_continuation(root)
+        except Exception:
+            pass
+        raise ValueError(
+            f"prompt {prompt_id} has {prompt_token_ids.shape[0]} tokens, "
+            f"limit is {config.prompt_max_tokens}"
+        )
+    tree = RolloutTree(prompt_id=prompt_id, prompt_token_ids=prompt_token_ids, root_node=0)
+    tree.nodes[0] = Node(id=0, prompt_id=prompt_id, parent_edge=None, depth=0, generated_len=0)
+    roots = root.spawn_children(
+        [
+            ChildContinuationSpec(metadata={"root_sample_index": i}, label=f"root-{i}")
+            for i in range(config.root_samples)
+        ]
+    )
+    actives = [
+        ActivePath(continuation=c, parent_node=0, path_edges=(), generated_len=0, next_branch_index=0)
+        for c in roots
+    ]
+    return tree, [root, *roots], actives
+
+
+def _record_continuation(llm, tree, ctr, active, cr, prompt_row, config, is_final):
+    """Record one edge/node, make a leaf or fork; returns [(child_continuation, ActivePath), ...]."""
+    if cr.logprobs is None:
+        raise RuntimeError("xsglang did not return selected-token logprobs")
+    tokens = np.asarray(cr.emitted_token_ids.tolist(), dtype=np.int32)
+    old_logprobs = np.asarray(cr.logprobs.tolist(), dtype=np.float32)
+    if tokens.shape != old_logprobs.shape:
+        raise ValueError("emitted tokens and logprobs are not aligned")
+    end_gen_pos = active.generated_len + int(tokens.shape[0])
+    slots_below = _nominal_slots_below(config, active.next_branch_index)
+    eid = ctr["edge_id"]
+    nid = ctr["node_id"]
+    ctr["edge_id"] += 1
+    ctr["node_id"] += 1
+    finish_reason = cr.stop_reason or "unknown"
+    hit_eos = cr.final_status is ContinuationStatus.FINISHED and finish_reason == "eos"
+    # Leaf iff final stage or the trace ended (EOS). A branch-boundary / forced stop in a
+    # branch stage is non-terminal -> it forks.
+    terminal = is_final or hit_eos
+    tree.nodes[nid] = Node(
+        id=nid,
+        prompt_id=tree.prompt_id,
+        parent_edge=eid,
+        depth=len(active.path_edges) + 1,
+        generated_len=end_gen_pos,
+        terminal=terminal,
+        terminal_leaf_id=ctr["leaf_id"] if terminal else None,
+    )
+    tree.edges[eid] = Edge(
+        id=eid,
+        prompt_id=tree.prompt_id,
+        parent_node=active.parent_node,
+        child_node=nid,
+        depth=len(active.path_edges),
+        tokens=tokens,
+        old_logprobs=old_logprobs,
+        nominal_weight=slots_below,
+        start_gen_pos=active.generated_len,
+        end_gen_pos=end_gen_pos,
+        finish_reason=finish_reason,
+    )
+    tree.nodes[active.parent_node].children.append(eid)
+    path_edges = active.path_edges + (eid,)
+    if terminal:
+        completion = _decode_completion(llm, active.continuation.generated_token_ids)
+        tree.leaves[ctr["leaf_id"]] = Leaf(
+            id=ctr["leaf_id"],
+            prompt_id=tree.prompt_id,
+            node_id=nid,
+            path_edges=list(path_edges),
+            nominal_slot_count=slots_below,
+            answer_text=completion,
+            reward=binary_tag_reward(completion, _ground_truth(prompt_row)),
+            finish_reason=finish_reason,
+        )
+        ctr["leaf_id"] += 1
+        return []
+    children = active.continuation.spawn_children(
+        [
+            ChildContinuationSpec(
+                metadata={
+                    "branch_parent_node": nid,
+                    "branch_index": active.next_branch_index,
+                    "child_index": ci,
+                },
+                label=f"b{active.next_branch_index}-{ci}",
+            )
+            for ci in range(config.branch_factor)
+        ]
+    )
+    return [
+        (
+            child,
+            ActivePath(
+                continuation=child,
+                parent_node=nid,
+                path_edges=path_edges,
+                generated_len=end_gen_pos,
+                next_branch_index=active.next_branch_index + 1,
+            ),
+        )
+        for child in children
+    ]
+
+
+def build_branch_rollout_wave(
+    *,
+    llm: Any,
+    prompt_rows: Iterable[dict[str, Any]],
+    config: BranchGRPOConfig,
+    start_prompt_id: int = 0,
+    sampling_params: SamplingParams | None = None,
+) -> List[RolloutTree]:
+    """Build several prompt trees jointly, batching one run_block over the whole wave per stage.
+
+    Segment-relative stages keep every continuation across all trees synchronized at each stage,
+    so a single run_block decodes the combined frontier (level-major across the wave, plan sec 3)
+    -> far higher decode concurrency than prompt-major. Over-long prompts are skipped at open.
+    """
+    params = sampling_params or rollout_sampling_params(config)
+    rows = list(prompt_rows)
+    all_conts: List[Any] = []
+    trees: dict[int, RolloutTree] = {}
+    ctrs: dict[int, dict] = {}
+    frontier: list[tuple[int, ActivePath]] = []
+    try:
+        for ti, row in enumerate(rows):
+            try:
+                tree, conts, actives = _open_prompt_tree(llm, row, start_prompt_id + ti, config, params)
+            except Exception as exc:  # over-long prompt etc. -> skip this prompt, keep the wave
+                print(f"[warn] skip prompt {start_prompt_id + ti}: {exc}", flush=True)
+                continue
+            trees[ti] = tree
+            ctrs[ti] = {"node_id": 1, "edge_id": 0, "leaf_id": 0}
+            all_conts.extend(conts)
+            frontier.extend((ti, a) for a in actives)
+
+        for seg_len, is_final in _stages(config):
+            if not frontier:
+                break
+            cont_ids = tuple(a.continuation.continuation_id for (_, a) in frontier)
+            if is_final:
+                max_new = max(1, config.max_generation_tokens - max(a.generated_len for (_, a) in frontier))
+                block = BlockSpec(
+                    continuation_ids=cont_ids, max_new_tokens=max_new, stop_on_eos=True,
+                    request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
+                )
+            else:
+                block = BlockSpec(
+                    continuation_ids=cont_ids, max_new_tokens=seg_len + int(config.boundary_lookahead),
+                    min_new_tokens=seg_len, stop_on_eos=True,
+                    branch_confidence_threshold=float(config.confidence_threshold),
+                    request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
+                )
+            result = llm.run_block(block)
+            by = {item.continuation_id: item for item in result.continuation_results}
+            nxt: list[tuple[int, ActivePath]] = []
+            for ti, active in frontier:
+                cr = by[active.continuation.continuation_id]
+                for child_cont, child_active in _record_continuation(
+                    llm, trees[ti], ctrs[ti], active, cr, rows[ti], config, is_final
+                ):
+                    all_conts.append(child_cont)
+                    nxt.append((ti, child_active))
+            frontier = nxt
+
+        out: List[RolloutTree] = []
+        for ti in sorted(trees):
+            if not trees[ti].leaves:
+                raise RuntimeError(f"rollout for prompt {start_prompt_id + ti} produced no leaves")
+            out.append(trees[ti])
+        return out
+    finally:
+        for continuation in reversed(all_conts):
+            try:
+                llm.free_continuation(continuation)
+            except Exception:
+                pass
+
+
 def build_branch_rollout_tree(
     *,
     llm: Any,
@@ -65,208 +266,13 @@ def build_branch_rollout_tree(
     config: BranchGRPOConfig,
     sampling_params: SamplingParams | None = None,
 ) -> RolloutTree:
-    prompt = str(prompt_row["prompt"])
-    params = sampling_params or rollout_sampling_params(config)
-    root = llm.open_continuation(prompt, params)
-    continuations: List[Any] = [root]
-    try:
-        prompt_token_ids = np.asarray(
-            root.materialize_input_ids()[: root.prompt_len].tolist(),
-            dtype=np.int32,
-        )
-        if prompt_token_ids.shape[0] > config.prompt_max_tokens:
-            raise ValueError(
-                f"prompt {prompt_id} has {prompt_token_ids.shape[0]} tokens, "
-                f"limit is {config.prompt_max_tokens}"
-            )
-
-        tree = RolloutTree(
-            prompt_id=prompt_id,
-            prompt_token_ids=prompt_token_ids,
-            root_node=0,
-        )
-        tree.nodes[0] = Node(
-            id=0,
-            prompt_id=prompt_id,
-            parent_edge=None,
-            depth=0,
-            generated_len=0,
-        )
-
-        root_children = root.spawn_children(
-            [
-                ChildContinuationSpec(
-                    metadata={"root_sample_index": root_idx},
-                    label=f"root-{root_idx}",
-                )
-                for root_idx in range(config.root_samples)
-            ]
-        )
-        continuations.extend(root_children)
-        frontier = [
-            ActivePath(
-                continuation=child,
-                parent_node=tree.root_node,
-                path_edges=(),
-                generated_len=0,
-                next_branch_index=0,
-            )
-            for child in root_children
-        ]
-
-        edge_id = 0
-        node_id = 1
-        leaf_id = 0
-        # Segment-relative stages keep frontier continuations synchronized (all start each
-        # stage at block-relative position 0), so one batched run_block per stage works even
-        # though confidence-gated forks land at staggered absolute positions.
-        prev_target = 0
-        seg_lens = []
-        for t in config.branch_targets:
-            seg_lens.append(int(t) - prev_target)
-            prev_target = int(t)
-        stages = [(seg, False) for seg in seg_lens] + [(None, True)]
-        lookahead = int(config.boundary_lookahead)
-        threshold = float(config.confidence_threshold)
-        for seg_len, is_final in stages:
-            if not frontier:
-                break
-            if is_final:
-                # Generate every leaf to EOS / the absolute generation budget. Cap by the most
-                # advanced continuation so none exceeds max_generation_tokens; no branching here.
-                max_new_tokens = max(
-                    1, config.max_generation_tokens - max(a.generated_len for a in frontier)
-                )
-                block = BlockSpec(
-                    continuation_ids=tuple(a.continuation.continuation_id for a in frontier),
-                    max_new_tokens=max_new_tokens,
-                    stop_on_eos=True,
-                    request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
-                )
-            else:
-                # Generate the nominal segment, then fork at the first low-confidence token
-                # (top-1 prob <= threshold) within `lookahead`, else force a fork at the cap.
-                block = BlockSpec(
-                    continuation_ids=tuple(a.continuation.continuation_id for a in frontier),
-                    max_new_tokens=seg_len + lookahead,
-                    min_new_tokens=seg_len,
-                    stop_on_eos=True,
-                    branch_confidence_threshold=threshold,
-                    request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
-                )
-            result = llm.run_block(block)
-            by_continuation = {
-                item.continuation_id: item for item in result.continuation_results
-            }
-            next_frontier: list[ActivePath] = []
-            for active in frontier:
-                continuation = active.continuation
-                continuation_result = by_continuation[continuation.continuation_id]
-                if continuation_result.logprobs is None:
-                    raise RuntimeError("xsglang did not return selected-token logprobs")
-
-                tokens = np.asarray(
-                    continuation_result.emitted_token_ids.tolist(),
-                    dtype=np.int32,
-                )
-                old_logprobs = np.asarray(
-                    continuation_result.logprobs.tolist(),
-                    dtype=np.float32,
-                )
-                if tokens.shape != old_logprobs.shape:
-                    raise ValueError("emitted tokens and logprobs are not aligned")
-
-                end_gen_pos = active.generated_len + int(tokens.shape[0])
-                slots_below = _nominal_slots_below(config, active.next_branch_index)
-                current_edge_id = edge_id
-                current_node_id = node_id
-                edge_id += 1
-                node_id += 1
-
-                finish_reason = continuation_result.stop_reason or "unknown"
-                hit_eos = (
-                    continuation_result.final_status is ContinuationStatus.FINISHED
-                    and finish_reason == "eos"
-                )
-                # Leaf iff this is the final stage or the trace ended (EOS). A confidence
-                # branch-boundary / forced (block_limit / max_tokens) stop in a branch stage is
-                # non-terminal -> it forks.
-                terminal = is_final or hit_eos
-                tree.nodes[current_node_id] = Node(
-                    id=current_node_id,
-                    prompt_id=prompt_id,
-                    parent_edge=current_edge_id,
-                    depth=len(active.path_edges) + 1,
-                    generated_len=end_gen_pos,
-                    terminal=terminal,
-                    terminal_leaf_id=leaf_id if terminal else None,
-                )
-                tree.edges[current_edge_id] = Edge(
-                    id=current_edge_id,
-                    prompt_id=prompt_id,
-                    parent_node=active.parent_node,
-                    child_node=current_node_id,
-                    depth=len(active.path_edges),
-                    tokens=tokens,
-                    old_logprobs=old_logprobs,
-                    nominal_weight=slots_below,
-                    start_gen_pos=active.generated_len,
-                    end_gen_pos=end_gen_pos,
-                    finish_reason=finish_reason,
-                )
-                tree.nodes[active.parent_node].children.append(current_edge_id)
-                path_edges = active.path_edges + (current_edge_id,)
-
-                if terminal:
-                    completion = _decode_completion(llm, continuation.generated_token_ids)
-                    tree.leaves[leaf_id] = Leaf(
-                        id=leaf_id,
-                        prompt_id=prompt_id,
-                        node_id=current_node_id,
-                        path_edges=list(path_edges),
-                        nominal_slot_count=slots_below,
-                        answer_text=completion,
-                        reward=binary_tag_reward(completion, _ground_truth(prompt_row)),
-                        finish_reason=finish_reason,
-                    )
-                    leaf_id += 1
-                    continue
-
-                children = continuation.spawn_children(
-                    [
-                        ChildContinuationSpec(
-                            metadata={
-                                "branch_parent_node": current_node_id,
-                                "branch_index": active.next_branch_index,
-                                "child_index": child_idx,
-                            },
-                            label=f"b{active.next_branch_index}-{child_idx}",
-                        )
-                        for child_idx in range(config.branch_factor)
-                    ]
-                )
-                continuations.extend(children)
-                for child in children:
-                    next_frontier.append(
-                        ActivePath(
-                            continuation=child,
-                            parent_node=current_node_id,
-                            path_edges=path_edges,
-                            generated_len=end_gen_pos,
-                            next_branch_index=active.next_branch_index + 1,
-                        )
-                    )
-            frontier = next_frontier
-
-        if not tree.leaves:
-            raise RuntimeError(f"rollout for prompt {prompt_id} produced no leaves")
-        return tree
-    finally:
-        for continuation in reversed(continuations):
-            try:
-                llm.free_continuation(continuation)
-            except Exception:
-                pass
+    trees = build_branch_rollout_wave(
+        llm=llm, prompt_rows=[prompt_row], config=config,
+        start_prompt_id=prompt_id, sampling_params=sampling_params,
+    )
+    if not trees:
+        raise ValueError(f"prompt {prompt_id} could not be rolled out (skipped)")
+    return trees[0]
 
 
 def build_branch_rollout_trees(
@@ -275,11 +281,7 @@ def build_branch_rollout_trees(
     prompt_rows: Iterable[dict[str, Any]],
     config: BranchGRPOConfig,
     start_prompt_id: int = 0,
-) -> Iterable[RolloutTree]:
-    for offset, row in enumerate(prompt_rows):
-        yield build_branch_rollout_tree(
-            llm=llm,
-            prompt_row=row,
-            prompt_id=start_prompt_id + offset,
-            config=config,
-        )
+) -> List[RolloutTree]:
+    return build_branch_rollout_wave(
+        llm=llm, prompt_rows=list(prompt_rows), config=config, start_prompt_id=start_prompt_id
+    )
