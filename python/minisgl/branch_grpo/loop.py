@@ -167,14 +167,29 @@ class BranchGRPOLoop:
         t0 = time.perf_counter()
         trees: list[RolloutTree] = []
         rollout_gen_tokens = 0
+        skipped_prompts = 0
         for offset, row in enumerate(prompt_rows):
-            tree = build_branch_rollout_tree(
-                llm=self.llm, prompt_row=row,
-                prompt_id=update_id * 1000 + offset, config=cfg,
-            )
+            try:
+                tree = build_branch_rollout_tree(
+                    llm=self.llm, prompt_row=row,
+                    prompt_id=update_id * 1000 + offset, config=cfg,
+                )
+            except Exception as exc:
+                # Robustness: an occasional OpenR1 prompt exceeds prompt_max_tokens (the
+                # answer-length filter does not bound prompt length), or a rollout hiccups.
+                # Skip that prompt rather than killing the run. Denominator stays constant.
+                skipped_prompts += 1
+                print(f"[warn] u{update_id} skip prompt offset={offset}: {exc}", flush=True)
+                continue
             trees.append(tree)
             rollout_gen_tokens += int(sum(int(e.tokens.shape[0]) for e in tree.edges.values()))
         rollout_s = time.perf_counter() - t0
+        m.fields["skipped_prompts"] = float(skipped_prompts)
+        if not trees:
+            # Whole batch unusable; skip the optimizer step but keep xsglang weights current.
+            print(f"[warn] u{update_id}: all {len(prompt_rows)} prompts skipped, no update", flush=True)
+            m.fields["no_update"] = 1.0
+            return m
 
         # ---- E. advantage backup ----
         all_rewards, unique_rewards, leaf_lengths = [], [], []
