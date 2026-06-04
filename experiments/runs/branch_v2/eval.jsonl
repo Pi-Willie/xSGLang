@@ -1,3 +1,4 @@
 {"greedy_accuracy": 0.2890625, "invalid_format_rate": 0.31640625, "repetition_rate": 0.0, "mean_response_length": 1047.66015625, "eval_rows": 256.0, "update_id": 0}
 {"greedy_accuracy": 0.2421875, "invalid_format_rate": 0.30078125, "repetition_rate": 0.0, "mean_response_length": 1048.6875, "eval_rows": 256.0, "update_id": 0}
 {"greedy_accuracy": 0.29296875, "invalid_format_rate": 0.2578125, "repetition_rate": 0.0, "mean_response_length": 957.53125, "eval_rows": 256.0, "update_id": 25}
+{"greedy_accuracy": 0.2890625, "invalid_format_rate": 0.15234375, "repetition_rate": 0.0, "mean_response_length": 835.22265625, "eval_rows": 256.0, "update_id": 25}

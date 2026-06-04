@@ -1,0 +1,11 @@
+{
+  "out": "experiments/data/sft_openr1_r1.jsonl",
+  "scanned": 86217,
+  "written": 12000,
+  "skipped_no_correct_think": 11549,
+  "skipped_too_long": 28221,
+  "skipped_bad_answer": 32589,
+  "skipped_heldout_dup": 1858,
+  "mean_completion_chars": 4690.437583333333,
+  "max_completion_chars": 7038
+}

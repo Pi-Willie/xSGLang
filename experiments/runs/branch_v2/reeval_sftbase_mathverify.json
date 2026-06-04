@@ -1,0 +1,2578 @@
+{
+  "summary": {
+    "label": "sft_base",
+    "model": "experiments/sft/qwen3_4b_base_v1/model",
+    "n": 256,
+    "greedy_accuracy": 0.23828125,
+    "format_valid_rate": 0.6484375,
+    "repetition_rate": 0.0,
+    "empty_think_rate": 0.3515625,
+    "mean_len": 1090.1171875,
+    "max_len": 1536,
+    "distinct_answers": 118,
+    "top_answer": "4",
+    "top_answer_share": 0.05421686746987952
+  },
+  "examples": [
+    {
+      "answer_gt": "16",
+      "pred_answer": "19",
+      "norm_pred": "19",
+      "correct": false,
+      "valid_format": true,
+      "len": 1048,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "Yes",
+      "pred_answer": "yes",
+      "norm_pred": "yes",
+      "correct": false,
+      "valid_format": true,
+      "len": 982,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "(6, 12)",
+      "pred_answer": "\\left(\\frac{27}{4},\\frac{29}{4}\\right)",
+      "norm_pred": "(\\frac{27}{4}\\frac{29}{4})",
+      "correct": false,
+      "valid_format": true,
+      "len": 1014,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "503",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": false,
+      "valid_format": true,
+      "len": 1476,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "3",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": false,
+      "valid_format": true,
+      "len": 717,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "331",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "102",
+      "pred_answer": "3",
+      "norm_pred": "3",
+      "correct": false,
+      "valid_format": true,
+      "len": 243,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "111",
+      "pred_answer": "101",
+      "norm_pred": "101",
+      "correct": false,
+      "valid_format": true,
+      "len": 877,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2003",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "n = 3",
+      "pred_answer": "3",
+      "norm_pred": "3",
+      "correct": true,
+      "valid_format": true,
+      "len": 918,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "51",
+      "pred_answer": "101 knights, 0 liars",
+      "norm_pred": "101knights0liars",
+      "correct": false,
+      "valid_format": true,
+      "len": 726,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "14",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "1440",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "-12",
+      "pred_answer": "-12",
+      "norm_pred": "-12",
+      "correct": true,
+      "valid_format": true,
+      "len": 1340,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "e^x",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": false,
+      "valid_format": true,
+      "len": 860,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "33",
+      "pred_answer": "33",
+      "norm_pred": "33",
+      "correct": true,
+      "valid_format": true,
+      "len": 848,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "50",
+      "pred_answer": "2",
+      "norm_pred": "2",
+      "correct": false,
+      "valid_format": true,
+      "len": 476,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "-4128",
+      "pred_answer": "-19488",
+      "norm_pred": "-19488",
+      "correct": false,
+      "valid_format": true,
+      "len": 1535,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "750",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "\\mu<M",
+      "pred_answer": "D",
+      "norm_pred": "D",
+      "correct": false,
+      "valid_format": true,
+      "len": 956,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "k-1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": "12",
+      "norm_pred": "12",
+      "correct": false,
+      "valid_format": true,
+      "len": 1294,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "D",
+      "pred_answer": "more than 1 but finite",
+      "norm_pred": "morethan1butfinite",
+      "correct": false,
+      "valid_format": true,
+      "len": 808,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "7",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "B",
+      "pred_answer": "B",
+      "norm_pred": "B",
+      "correct": true,
+      "valid_format": true,
+      "len": 789,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "10",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": "\\frac{b}{y}-1",
+      "norm_pred": "\\frac{b}{y}-1",
+      "correct": false,
+      "valid_format": true,
+      "len": 715,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "16",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "51",
+      "pred_answer": "303",
+      "norm_pred": "303",
+      "correct": false,
+      "valid_format": true,
+      "len": 869,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "5.3",
+      "pred_answer": "100",
+      "norm_pred": "100",
+      "correct": false,
+      "valid_format": true,
+      "len": 1399,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": "1",
+      "norm_pred": "1",
+      "correct": true,
+      "valid_format": true,
+      "len": 535,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "q=1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "200",
+      "pred_answer": "499",
+      "norm_pred": "499",
+      "correct": false,
+      "valid_format": true,
+      "len": 977,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "14",
+      "pred_answer": "undefined",
+      "norm_pred": "undefined",
+      "correct": false,
+      "valid_format": true,
+      "len": 1473,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "25",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "\\sin x",
+      "pred_answer": "\\sin x",
+      "norm_pred": "\\sinx",
+      "correct": true,
+      "valid_format": true,
+      "len": 255,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "52.5",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "486",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "33",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": "5",
+      "norm_pred": "5",
+      "correct": false,
+      "valid_format": true,
+      "len": 1032,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "0",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": true,
+      "valid_format": true,
+      "len": 446,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "121",
+      "pred_answer": "121",
+      "norm_pred": "121",
+      "correct": true,
+      "valid_format": true,
+      "len": 223,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "A",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "5",
+      "pred_answer": "-\\frac{11}{3}",
+      "norm_pred": "-\\frac{11}{3}",
+      "correct": false,
+      "valid_format": true,
+      "len": 821,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2m+1",
+      "pred_answer": "3m-2",
+      "norm_pred": "3m-2",
+      "correct": false,
+      "valid_format": true,
+      "len": 1511,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "D",
+      "pred_answer": "(5,+\\infty)",
+      "norm_pred": "(5+\\infty)",
+      "correct": false,
+      "valid_format": true,
+      "len": 1246,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "25",
+      "pred_answer": "25",
+      "norm_pred": "25",
+      "correct": true,
+      "valid_format": true,
+      "len": 437,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "156",
+      "pred_answer": "12\\sqrt{3}-12",
+      "norm_pred": "12\\sqrt{3}-12",
+      "correct": false,
+      "valid_format": true,
+      "len": 877,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "59",
+      "pred_answer": "58",
+      "norm_pred": "58",
+      "correct": false,
+      "valid_format": true,
+      "len": 513,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "16",
+      "pred_answer": "16",
+      "norm_pred": "16",
+      "correct": true,
+      "valid_format": true,
+      "len": 1016,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": false,
+      "valid_format": true,
+      "len": 681,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "B",
+      "pred_answer": "C",
+      "norm_pred": "C",
+      "correct": false,
+      "valid_format": true,
+      "len": 1069,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "9",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "7,8,9",
+      "pred_answer": "impossible",
+      "norm_pred": "impossible",
+      "correct": false,
+      "valid_format": true,
+      "len": 676,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "8",
+      "pred_answer": "3",
+      "norm_pred": "3",
+      "correct": false,
+      "valid_format": true,
+      "len": 1347,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2011",
+      "pred_answer": "false",
+      "norm_pred": "false",
+      "correct": false,
+      "valid_format": true,
+      "len": 286,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "16",
+      "pred_answer": "8",
+      "norm_pred": "8",
+      "correct": false,
+      "valid_format": true,
+      "len": 1136,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "64\\pi",
+      "pred_answer": "64\\pi",
+      "norm_pred": "64\\pi",
+      "correct": true,
+      "valid_format": true,
+      "len": 535,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "7",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "200",
+      "pred_answer": "47",
+      "norm_pred": "47",
+      "correct": false,
+      "valid_format": true,
+      "len": 1504,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "16",
+      "pred_answer": "10",
+      "norm_pred": "10",
+      "correct": false,
+      "valid_format": true,
+      "len": 1442,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "22or4",
+      "pred_answer": "22",
+      "norm_pred": "22",
+      "correct": true,
+      "valid_format": true,
+      "len": 790,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "941",
+      "pred_answer": "990",
+      "norm_pred": "990",
+      "correct": false,
+      "valid_format": true,
+      "len": 604,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": "2",
+      "norm_pred": "2",
+      "correct": true,
+      "valid_format": true,
+      "len": 302,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2023",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "40",
+      "pred_answer": "40,78",
+      "norm_pred": "4078",
+      "correct": false,
+      "valid_format": true,
+      "len": 1036,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "8",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "211",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "20",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "2018",
+      "pred_answer": "2019",
+      "norm_pred": "2019",
+      "correct": false,
+      "valid_format": true,
+      "len": 515,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "5",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "31",
+      "pred_answer": "31",
+      "norm_pred": "31",
+      "correct": true,
+      "valid_format": true,
+      "len": 885,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "891",
+      "pred_answer": "891,1",
+      "norm_pred": "8911",
+      "correct": false,
+      "valid_format": true,
+      "len": 1516,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "240",
+      "pred_answer": "3",
+      "norm_pred": "3",
+      "correct": false,
+      "valid_format": true,
+      "len": 1404,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "127",
+      "pred_answer": "2689",
+      "norm_pred": "2689",
+      "correct": false,
+      "valid_format": true,
+      "len": 1128,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "n = 7",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "84;15",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "120",
+      "pred_answer": "90",
+      "norm_pred": "90",
+      "correct": false,
+      "valid_format": true,
+      "len": 1278,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "49",
+      "pred_answer": "49",
+      "norm_pred": "49",
+      "correct": true,
+      "valid_format": true,
+      "len": 343,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "78",
+      "pred_answer": "222",
+      "norm_pred": "222",
+      "correct": false,
+      "valid_format": true,
+      "len": 1071,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "125",
+      "pred_answer": "125",
+      "norm_pred": "125",
+      "correct": true,
+      "valid_format": true,
+      "len": 616,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": false,
+      "valid_format": true,
+      "len": 1445,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "5",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "334",
+      "pred_answer": "undefined",
+      "norm_pred": "undefined",
+      "correct": false,
+      "valid_format": true,
+      "len": 1250,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1.012",
+      "pred_answer": "1.012",
+      "norm_pred": "1.012",
+      "correct": true,
+      "valid_format": true,
+      "len": 606,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "30787",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "198",
+      "pred_answer": "198",
+      "norm_pred": "198",
+      "correct": true,
+      "valid_format": true,
+      "len": 618,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "73",
+      "pred_answer": "22",
+      "norm_pred": "22",
+      "correct": false,
+      "valid_format": true,
+      "len": 779,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "120",
+      "pred_answer": "135",
+      "norm_pred": "135",
+      "correct": false,
+      "valid_format": true,
+      "len": 1050,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": true,
+      "valid_format": true,
+      "len": 1080,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "60",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": false,
+      "valid_format": true,
+      "len": 956,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "4028",
+      "pred_answer": "4028",
+      "norm_pred": "4028",
+      "correct": true,
+      "valid_format": true,
+      "len": 743,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "E",
+      "pred_answer": "A",
+      "norm_pred": "A",
+      "correct": false,
+      "valid_format": true,
+      "len": 685,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "9100",
+      "pred_answer": "3250",
+      "norm_pred": "3250",
+      "correct": false,
+      "valid_format": true,
+      "len": 1026,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "15",
+      "pred_answer": "15",
+      "norm_pred": "15",
+      "correct": true,
+      "valid_format": true,
+      "len": 232,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "16",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": "odd",
+      "norm_pred": "odd",
+      "correct": false,
+      "valid_format": true,
+      "len": 1461,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": true,
+      "valid_format": true,
+      "len": 616,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": "no",
+      "norm_pred": "no",
+      "correct": false,
+      "valid_format": true,
+      "len": 1335,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "A",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "191",
+      "pred_answer": "101",
+      "norm_pred": "101",
+      "correct": false,
+      "valid_format": true,
+      "len": 639,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "192",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "144",
+      "pred_answer": "144",
+      "norm_pred": "144",
+      "correct": true,
+      "valid_format": true,
+      "len": 699,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "10;90",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": false,
+      "valid_format": true,
+      "len": 424,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "96",
+      "pred_answer": "5,96",
+      "norm_pred": "596",
+      "correct": false,
+      "valid_format": true,
+      "len": 1177,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": "6",
+      "norm_pred": "6",
+      "correct": true,
+      "valid_format": true,
+      "len": 449,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "560",
+      "pred_answer": "560",
+      "norm_pred": "560",
+      "correct": true,
+      "valid_format": true,
+      "len": 369,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "92",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "2551",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "60060",
+      "pred_answer": "40040",
+      "norm_pred": "40040",
+      "correct": false,
+      "valid_format": true,
+      "len": 1286,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "5",
+      "pred_answer": "5",
+      "norm_pred": "5",
+      "correct": true,
+      "valid_format": true,
+      "len": 641,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1973",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "D",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "181",
+      "pred_answer": "158",
+      "norm_pred": "158",
+      "correct": false,
+      "valid_format": true,
+      "len": 1151,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "220",
+      "pred_answer": "220",
+      "norm_pred": "220",
+      "correct": true,
+      "valid_format": true,
+      "len": 597,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "676",
+      "pred_answer": "676",
+      "norm_pred": "676",
+      "correct": true,
+      "valid_format": true,
+      "len": 1035,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "98",
+      "pred_answer": "98",
+      "norm_pred": "98",
+      "correct": true,
+      "valid_format": true,
+      "len": 349,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "29",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "83",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "8",
+      "pred_answer": "8",
+      "norm_pred": "8",
+      "correct": true,
+      "valid_format": true,
+      "len": 420,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2916",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "2011",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "D",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "500",
+      "pred_answer": "500",
+      "norm_pred": "500",
+      "correct": true,
+      "valid_format": true,
+      "len": 537,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": "parabola",
+      "norm_pred": "parabola",
+      "correct": false,
+      "valid_format": true,
+      "len": 1004,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": "5",
+      "norm_pred": "5",
+      "correct": false,
+      "valid_format": true,
+      "len": 1535,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "315",
+      "pred_answer": "70",
+      "norm_pred": "70",
+      "correct": false,
+      "valid_format": true,
+      "len": 394,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "10",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": "3",
+      "norm_pred": "3",
+      "correct": false,
+      "valid_format": true,
+      "len": 1031,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "66",
+      "pred_answer": "72",
+      "norm_pred": "72",
+      "correct": false,
+      "valid_format": true,
+      "len": 757,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "665",
+      "pred_answer": "665",
+      "norm_pred": "665",
+      "correct": true,
+      "valid_format": true,
+      "len": 146,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "98",
+      "pred_answer": "1",
+      "norm_pred": "1",
+      "correct": false,
+      "valid_format": true,
+      "len": 812,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": "\\frac{3}{2}",
+      "norm_pred": "\\frac{3}{2}",
+      "correct": false,
+      "valid_format": true,
+      "len": 1330,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "35",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "45",
+      "pred_answer": "45^\\circ",
+      "norm_pred": "45^\\circ",
+      "correct": true,
+      "valid_format": true,
+      "len": 197,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "9",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "7.795",
+      "pred_answer": "\\frac{119}{2}",
+      "norm_pred": "\\frac{119}{2}",
+      "correct": false,
+      "valid_format": true,
+      "len": 455,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "41",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": "20",
+      "norm_pred": "20",
+      "correct": false,
+      "valid_format": true,
+      "len": 1000,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "9",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": false,
+      "valid_format": true,
+      "len": 645,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "32",
+      "pred_answer": "48",
+      "norm_pred": "48",
+      "correct": false,
+      "valid_format": true,
+      "len": 1064,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "0<x<1",
+      "pred_answer": "(0,1)",
+      "norm_pred": "(01)",
+      "correct": false,
+      "valid_format": true,
+      "len": 842,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": "2",
+      "norm_pred": "2",
+      "correct": true,
+      "valid_format": true,
+      "len": 823,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "111",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": "C",
+      "norm_pred": "C",
+      "correct": true,
+      "valid_format": true,
+      "len": 701,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "-1",
+      "pred_answer": "-1",
+      "norm_pred": "-1",
+      "correct": true,
+      "valid_format": true,
+      "len": 968,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "A",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": false,
+      "valid_format": true,
+      "len": 1032,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "16",
+      "pred_answer": "16",
+      "norm_pred": "16",
+      "correct": true,
+      "valid_format": true,
+      "len": 1276,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "D",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": false,
+      "valid_format": true,
+      "len": 1272,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "29",
+      "pred_answer": "11",
+      "norm_pred": "11",
+      "correct": false,
+      "valid_format": true,
+      "len": 1531,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "n + 1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": "6,18,12",
+      "norm_pred": "61812",
+      "correct": false,
+      "valid_format": true,
+      "len": 440,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "30",
+      "pred_answer": "30",
+      "norm_pred": "30",
+      "correct": true,
+      "valid_format": true,
+      "len": 410,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "32",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "13",
+      "pred_answer": "13",
+      "norm_pred": "13",
+      "correct": true,
+      "valid_format": true,
+      "len": 224,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "5",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": false,
+      "valid_format": true,
+      "len": 525,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "41",
+      "pred_answer": "21",
+      "norm_pred": "21",
+      "correct": false,
+      "valid_format": true,
+      "len": 496,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "5979",
+      "pred_answer": "6001",
+      "norm_pred": "6001",
+      "correct": false,
+      "valid_format": true,
+      "len": 633,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "75",
+      "pred_answer": "75",
+      "norm_pred": "75",
+      "correct": true,
+      "valid_format": true,
+      "len": 936,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "10",
+      "pred_answer": "20",
+      "norm_pred": "20",
+      "correct": false,
+      "valid_format": true,
+      "len": 530,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": "C",
+      "norm_pred": "C",
+      "correct": true,
+      "valid_format": true,
+      "len": 980,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "100",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "95",
+      "pred_answer": "95",
+      "norm_pred": "95",
+      "correct": true,
+      "valid_format": true,
+      "len": 741,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": "32",
+      "norm_pred": "32",
+      "correct": false,
+      "valid_format": true,
+      "len": 672,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "B",
+      "pred_answer": "(D)",
+      "norm_pred": "(D)",
+      "correct": false,
+      "valid_format": true,
+      "len": 1506,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "285",
+      "pred_answer": "285",
+      "norm_pred": "285",
+      "correct": true,
+      "valid_format": true,
+      "len": 868,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "500",
+      "pred_answer": "500",
+      "norm_pred": "500",
+      "correct": true,
+      "valid_format": true,
+      "len": 619,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "40",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "312",
+      "pred_answer": "444",
+      "norm_pred": "444",
+      "correct": false,
+      "valid_format": true,
+      "len": 1216,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "B",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "333",
+      "pred_answer": "-\\frac{54416}{3}",
+      "norm_pred": "-\\frac{54416}{3}",
+      "correct": false,
+      "valid_format": true,
+      "len": 1063,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "n-1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "80",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "E",
+      "pred_answer": "23",
+      "norm_pred": "23",
+      "correct": false,
+      "valid_format": true,
+      "len": 874,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "59375",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "199",
+      "pred_answer": "200",
+      "norm_pred": "200",
+      "correct": false,
+      "valid_format": true,
+      "len": 1525,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "77",
+      "pred_answer": "\\frac{700}{9}",
+      "norm_pred": "\\frac{700}{9}",
+      "correct": false,
+      "valid_format": true,
+      "len": 798,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "9",
+      "pred_answer": "9",
+      "norm_pred": "9",
+      "correct": true,
+      "valid_format": true,
+      "len": 636,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "3",
+      "pred_answer": "1",
+      "norm_pred": "1",
+      "correct": false,
+      "valid_format": true,
+      "len": 746,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "36",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "40",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "12",
+      "pred_answer": "12",
+      "norm_pred": "12",
+      "correct": true,
+      "valid_format": true,
+      "len": 1350,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "44",
+      "pred_answer": "22",
+      "norm_pred": "22",
+      "correct": false,
+      "valid_format": true,
+      "len": 1064,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": "1",
+      "norm_pred": "1",
+      "correct": false,
+      "valid_format": true,
+      "len": 1224,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "5",
+      "pred_answer": "2",
+      "norm_pred": "2",
+      "correct": false,
+      "valid_format": true,
+      "len": 835,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "9",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "18",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "2;-2",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "5073",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "0.75",
+      "pred_answer": "\\frac{1}{2}",
+      "norm_pred": "\\frac{1}{2}",
+      "correct": false,
+      "valid_format": true,
+      "len": 492,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "B",
+      "pred_answer": "2",
+      "norm_pred": "2",
+      "correct": false,
+      "valid_format": true,
+      "len": 604,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "76",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "13",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "2700",
+      "pred_answer": "2700",
+      "norm_pred": "2700",
+      "correct": true,
+      "valid_format": true,
+      "len": 610,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "85",
+      "pred_answer": "85",
+      "norm_pred": "85",
+      "correct": true,
+      "valid_format": true,
+      "len": 955,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "-3;3",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "101",
+      "pred_answer": "5051",
+      "norm_pred": "5051",
+      "correct": false,
+      "valid_format": true,
+      "len": 973,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "400",
+      "pred_answer": "400",
+      "norm_pred": "400",
+      "correct": true,
+      "valid_format": true,
+      "len": 751,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2023",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "24",
+      "pred_answer": "24",
+      "norm_pred": "24",
+      "correct": true,
+      "valid_format": true,
+      "len": 300,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "6765",
+      "pred_answer": "121",
+      "norm_pred": "121",
+      "correct": false,
+      "valid_format": true,
+      "len": 1007,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "23.5",
+      "pred_answer": "23.5\\%",
+      "norm_pred": "23.5\\%",
+      "correct": true,
+      "valid_format": true,
+      "len": 624,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "99000",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "36",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "10",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": false,
+      "valid_format": true,
+      "len": 996,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "(2,2)",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": "1",
+      "norm_pred": "1",
+      "correct": false,
+      "valid_format": true,
+      "len": 355,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1976",
+      "pred_answer": "1975.5",
+      "norm_pred": "1975.5",
+      "correct": false,
+      "valid_format": true,
+      "len": 874,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2",
+      "pred_answer": "1",
+      "norm_pred": "1",
+      "correct": false,
+      "valid_format": true,
+      "len": 1019,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "16",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "7",
+      "pred_answer": "5\\sqrt{3}",
+      "norm_pred": "5\\sqrt{3}",
+      "correct": false,
+      "valid_format": true,
+      "len": 709,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "B",
+      "pred_answer": "sin^{2}A",
+      "norm_pred": "sin^{2}A",
+      "correct": false,
+      "valid_format": true,
+      "len": 834,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "256",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "525",
+      "pred_answer": "555",
+      "norm_pred": "555",
+      "correct": false,
+      "valid_format": true,
+      "len": 906,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "13",
+      "pred_answer": "13",
+      "norm_pred": "13",
+      "correct": true,
+      "valid_format": true,
+      "len": 1207,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "100",
+      "pred_answer": "100",
+      "norm_pred": "100",
+      "correct": true,
+      "valid_format": true,
+      "len": 638,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "-13",
+      "pred_answer": "-13",
+      "norm_pred": "-13",
+      "correct": true,
+      "valid_format": true,
+      "len": 156,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "10",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "4",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "1043",
+      "pred_answer": "1095",
+      "norm_pred": "1095",
+      "correct": false,
+      "valid_format": true,
+      "len": 1021,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "-1or2",
+      "pred_answer": "-1,2",
+      "norm_pred": "-12",
+      "correct": false,
+      "valid_format": true,
+      "len": 929,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2002",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "6",
+      "pred_answer": "4",
+      "norm_pred": "4",
+      "correct": false,
+      "valid_format": true,
+      "len": 1169,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "2018",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "8",
+      "pred_answer": "\\frac{8}{5}",
+      "norm_pred": "\\frac{8}{5}",
+      "correct": false,
+      "valid_format": true,
+      "len": 435,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "11",
+      "pred_answer": "11",
+      "norm_pred": "11",
+      "correct": true,
+      "valid_format": true,
+      "len": 206,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "1",
+      "pred_answer": "0",
+      "norm_pred": "0",
+      "correct": false,
+      "valid_format": true,
+      "len": 1094,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "8",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "2n-2",
+      "pred_answer": "n \\le m \\le 2n-2",
+      "norm_pred": "n\\lem\\le2n-2",
+      "correct": true,
+      "valid_format": true,
+      "len": 1086,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "64",
+      "pred_answer": "64",
+      "norm_pred": "64",
+      "correct": true,
+      "valid_format": true,
+      "len": 412,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "55",
+      "pred_answer": "55",
+      "norm_pred": "55",
+      "correct": true,
+      "valid_format": true,
+      "len": 676,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "137",
+      "pred_answer": "137",
+      "norm_pred": "137",
+      "correct": true,
+      "valid_format": true,
+      "len": 333,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "C",
+      "pred_answer": "C",
+      "norm_pred": "C",
+      "correct": true,
+      "valid_format": true,
+      "len": 449,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "17",
+      "pred_answer": "5",
+      "norm_pred": "5",
+      "correct": false,
+      "valid_format": true,
+      "len": 383,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "202",
+      "pred_answer": "78",
+      "norm_pred": "78",
+      "correct": false,
+      "valid_format": true,
+      "len": 1390,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "17",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "3",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "5",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    },
+    {
+      "answer_gt": "28",
+      "pred_answer": "28",
+      "norm_pred": "28",
+      "correct": true,
+      "valid_format": true,
+      "len": 1106,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "167",
+      "pred_answer": "none",
+      "norm_pred": "none",
+      "correct": false,
+      "valid_format": true,
+      "len": 1334,
+      "repetition": false,
+      "empty_think": false
+    },
+    {
+      "answer_gt": "13",
+      "pred_answer": null,
+      "norm_pred": "",
+      "correct": false,
+      "valid_format": false,
+      "len": 1536,
+      "repetition": false,
+      "empty_think": true
+    }
+  ]
+}
