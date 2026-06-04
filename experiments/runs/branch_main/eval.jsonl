@@ -1,0 +1,5 @@
+{"greedy_accuracy": 0.2265625, "invalid_format_rate": 0.53515625, "repetition_rate": 0.0, "mean_response_length": 850.3515625, "eval_rows": 256.0, "update_id": 0}
+{"greedy_accuracy": 0.2265625, "invalid_format_rate": 0.5234375, "repetition_rate": 0.0, "mean_response_length": 846.9140625, "eval_rows": 256.0, "update_id": 0}
+{"greedy_accuracy": 0.1875, "invalid_format_rate": 0.54296875, "repetition_rate": 0.0, "mean_response_length": 843.03125, "eval_rows": 256.0, "update_id": 0}
+{"greedy_accuracy": 0.19921875, "invalid_format_rate": 0.51953125, "repetition_rate": 0.0, "mean_response_length": 850.8671875, "eval_rows": 256.0, "update_id": 25}
+{"greedy_accuracy": 0.234375, "invalid_format_rate": 0.484375, "repetition_rate": 0.0, "mean_response_length": 814.328125, "eval_rows": 256.0, "update_id": 50}
