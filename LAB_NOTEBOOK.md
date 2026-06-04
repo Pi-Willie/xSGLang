@@ -597,3 +597,20 @@ LEVERS for 0.5 (stacked):
 Operational: math_verify pip-installed on H100. SFT script now has --resume/--save-every
 (warm-restart). Note recurring ~1-commit fetch lag on the H100 -> always git fetch+reset twice
 or verify the file after deploy.
+
+## 2026-06-05 - R1-base negative result + moderate-trace refinement
+
+Built 12k-R1-trace base (SFT on verified-correct R1 <think> traces, ≤7000 chars). Result:
+the base is PATHOLOGICALLY VERBOSE -- greedy held-out (math verifier):
+- @max_gen 1536: acc 0.121, invalid_fmt 0.82, mean_len 1460 (pegged at cap)
+- @2048: acc 0.172, invalid_fmt 0.76, mean_len 1856 (pegged at cap)
+Length is pegged at the cap at every budget => the model never FINISHES its reasoning, so
+accuracy is truncation-capped everywhere. Eval at 3072 took >50 min for 256 prompts (max
+verbosity) => RL on this base is impractical on one H100. NEGATIVE RESULT: SFTing on long
+(≤7000 char) R1 traces makes the model over-reason without finishing; worse than the concise
+fireworks base (0.238) at practical budgets.
+
+Refinement: SFT on MODERATE-length R1 traces (cap ~3000 chars ≈ 750 tok) so the model learns
+good reasoning that FINISHES within ~1024-1536 tokens -> capable AND practical. Building
+sft_openr1_r1_mod (max-think-chars 3000). Best validated model remains v2 RL = 0.309 (math
+verifier, >0.262 baseline). Speed lever (cross-prompt wave) being demo'd at 1024.
