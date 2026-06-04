@@ -5,3 +5,4 @@
 {"greedy_accuracy": 0.234375, "invalid_format_rate": 0.484375, "repetition_rate": 0.0, "mean_response_length": 814.328125, "eval_rows": 256.0, "update_id": 50}
 {"greedy_accuracy": 0.2578125, "invalid_format_rate": 0.4609375, "repetition_rate": 0.0, "mean_response_length": 808.31640625, "eval_rows": 256.0, "update_id": 75}
 {"greedy_accuracy": 0.25390625, "invalid_format_rate": 0.43359375, "repetition_rate": 0.0, "mean_response_length": 787.84765625, "eval_rows": 256.0, "update_id": 100}
+{"greedy_accuracy": 0.26171875, "invalid_format_rate": 0.375, "repetition_rate": 0.0, "mean_response_length": 766.7265625, "eval_rows": 256.0, "update_id": 125}

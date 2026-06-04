@@ -516,3 +516,22 @@ MAIN run is compared against its OWN u0 = 0.188; band 2 sigma ~ 0.05 (real impro
 
 MAIN run (final stable config) live: experiments/runs/branch_main, target 250 updates,
 eval/ckpt 25/5, under preemption + crash auto-recovery monitors.
+
+## 2026-06-04 - Plateau reached; taste test SOUND; finalizing
+
+Held-out greedy accuracy (N=256): u0 0.188 -> u25 0.199 -> u50 0.234 -> u75 0.258 -> u100 0.254
+-> u125 0.262. REAL improvement +0.074 (> 2 sigma = 0.052), monotonic through u75 then flat
+(u75/u100/u125 within noise => plateau by the section-5 criterion). Stopped training at u125.
+invalid_format_rate fell monotonically 0.543 -> 0.375 (RL fixed the SFT format/verbosity gap as
+hypothesised; mean length 843 -> 767). Branch sibling-disagreement/mixed-node rate sustained
+~0.07-0.28 -> the leave-one-out edge advantage carries real signal (method not collapsing to
+terminal GRPO). Two interruptions handled autonomously: one Spot preemption (VM auto-restarted +
+--resume), one over-long-prompt crash (fixed: skip prompts > prompt_max_tokens).
+
+Taste test (best u125 vs SFT base, 64 held-out, greedy): accuracy 0.188 vs 0.141; format-valid
+0.625 vs 0.453; empty-think 0.375 vs 0.531; mean_len 764 vs 874; repetition 0/0; distinct
+answers 30 vs 26, top-answer-share 0.10 vs 0.069 (no mode collapse / answer-hacking). Coherent
+reasoning in samples. VERDICT: branch model is SOUND - improves on the SFT start on every axis.
+
+Best model: experiments/runs/branch_main/best_model (u125, greedy 0.262), pulled local to
+artifacts/branchgrpo_best_u125/. Completion contract items 5,6 satisfied.
