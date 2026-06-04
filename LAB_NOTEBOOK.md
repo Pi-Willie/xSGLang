@@ -535,3 +535,34 @@ reasoning in samples. VERDICT: branch model is SOUND - improves on the SFT start
 
 Best model: experiments/runs/branch_main/best_model (u125, greedy 0.262), pulled local to
 artifacts/branchgrpo_best_u125/. Completion contract items 5,6 satisfied.
+
+## 2026-06-04 - v2 run: confidence-branching + longer outputs + faster LR
+
+New goal: make Branch-Dr.GRPO great (beat 0.262, faster loop, longer outputs, stable) with a
+HARD mechanism: fork only at top-1 prob <= 0.6 (vectorized).
+
+Implemented confidence-gated branching:
+- engine.py: free top-1 max_prob = exp(max(log_softmax)) (batched reduction over the logprobs
+  already computed). ForwardOutput.max_prob_cpu.
+- BlockSpec.branch_confidence_threshold; scheduler stops a continuation ("branch_boundary")
+  at the first step past min_new_tokens with top-1 prob <= threshold (vectorized; per-req read
+  is a scalar compare). No per-token Python.
+- rollout: SEGMENT-relative stages (each stage generates nominal seg then defers the fork to
+  the first low-conf token within boundary_lookahead=48, else forced at the cap). Keeps the
+  whole frontier synchronized.
+- Validated (validate_conf_branch.py, 4 trees, main cfg): finish-reason hist branch_boundary
+  99 / block_limit 87 / eos 34 / max_tokens 8 -> 51% of forks land on a genuine low-conf token,
+  rest forced at the cap (model confident 48+ tok in math). Deferral modest (depth0 132.8 vs
+  128). Mechanism correct + calibrated.
+
+v2 config (main_v2): conf-branch (theta 0.6), max_gen 1024->1536 (objective 3: stop truncating
+long correct traces; denom P*Bmax*Tmax=8*32*1536 stays constant), lr 1e-6->2e-6 (objective 1:
+climb faster). max_packed 1024, memory_ratio 0.68 (KV 170k tok; 0.60 skipped ~1/8 prompts on
+KV-exhaust at 1536, 0.68 -> 0 skips). Run dir experiments/runs/branch_v2.
+
+u0: reward 0.082, grad 0.122 (lr 2e-6 stable), mixed-node 0.17, peak 70GB, rollout 108s.
+TENSION FOUND: max_gen 1536 ~doubled rollout (60s->108s) -> loop slower, and cross-prompt
+level-major batching (the main speed lever) needs ~4x KV concurrency which 1536 can't afford
+(128 leaves x 1536 >> KV pool). So speed (objective 2) and length (objective 3) trade off on
+this 80GB GPU. Plan: get v2 accuracy result (does 1536+conf-branch+2e-6 beat 0.262?), then
+demonstrate cross-prompt batching speedup on the KV-safe 1024 config as the speed deliverable.
