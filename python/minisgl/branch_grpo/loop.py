@@ -277,6 +277,7 @@ class BranchGRPOLoop:
             "sys_rollout_tokens_per_s": rollout_gen_tokens / rollout_s if rollout_s > 0 else 0.0,
             "sys_peak_gpu_gb": torch.cuda.max_memory_allocated(self.device) / 1e9,
             "sys_mem_alloc_start_gb": mem_alloc_start_gb,
+            "wall_ts": time.time(),  # for accuracy-per-wall-hour accounting
             "lr": cfg.lr,
         })
         # branch diagnostics by depth
