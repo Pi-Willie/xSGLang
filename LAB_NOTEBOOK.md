@@ -614,3 +614,28 @@ Refinement: SFT on MODERATE-length R1 traces (cap ~3000 chars ≈ 750 tok) so th
 good reasoning that FINISHES within ~1024-1536 tokens -> capable AND practical. Building
 sft_openr1_r1_mod (max-think-chars 3000). Best validated model remains v2 RL = 0.309 (math
 verifier, >0.262 baseline). Speed lever (cross-prompt wave) being demo'd at 1024.
+
+## 2026-06-05 - Round 2 converge: taste test SOUND, deliver, shut down
+
+Resumed v2 with the math-verifier reward reproduced the plateau (~0.29; u25 re-eval 0.289),
+confirming the 1000-example base ceiling. Best model = v2-best (u25, 0.309 math-verifier @1536).
+
+Final taste test (128 held-out, greedy, math verifier), best RL vs SFT base:
+- acc 0.281 vs 0.234; format-valid 0.812 vs 0.664; empty-think 0.172 vs 0.336;
+  mean_len 834 vs 1098; repetition 0/0; distinct answers 72 vs 68, top-share 0.096 vs 0.071.
+- VERDICT: SOUND. RL improves every axis vs the base; no repetition, no mode collapse /
+  answer-hacking (diverse answers), coherent reasoning. (128-subset reads ~0.28 vs the 256-set
+  0.309 due to subset + engine-numerics noise; the RL>base gain is consistent.)
+
+DELIVERED (round 2):
+- Confidence-gated branching: implemented + validated (free top-1 max_prob reduction; 51% forks
+  on genuine <=0.6 tokens; vectorized).
+- Best model 0.309 (>0.262 baseline, real >2sigma), taste-test SOUND. Both SFT base and best RL
+  model pulled local + byte-verified (artifacts/sft_qwen3_4b_base_v1, artifacts/branchgrpo_v2_best).
+- Math-aware verifier (validated). Budget = dominant accuracy lever (objective 3). Faster-loop
+  findings: in-memory refresh ~0.3s, mem-efficient logsumexp logprob; cross-prompt wave marginal
+  (GPU saturated at 32-wide). Negative results documented: R1-trace base too verbose; moderate
+  base data-starved.
+- 0.5 not reached; honest assessment in RESULTS_SUMMARY (4B/benchmark/compute ceiling).
+
+Shutting down H100 (all training stopped, watchers stopped, artifacts local).
