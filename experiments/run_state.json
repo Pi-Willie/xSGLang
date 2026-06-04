@@ -35,7 +35,7 @@
     "format_valid": 0.309,
     "note": "truncated at 512; verbose SFT targets (p90~1044 tok)"
   },
-  "sft_model_local_pull": "INCOMPLETE (3.85/7.5GB, scp dropped); re-pull after restart",
+  "sft_model_local_pull": "VERIFIED byte-exact at artifacts/sft_qwen3_4b_base_v1/model (8044982080 B); via 200MB split parts",
   "loop_code": "python/minisgl/branch_grpo/loop.py + experiments/scripts/run_branch_grpo.py (committed 28ee274, pushed origin)",
   "baseline_greedy_acc": 0.227,
   "baseline_invalid_fmt": 0.523,
