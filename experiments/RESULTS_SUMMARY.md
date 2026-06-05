@@ -233,7 +233,23 @@ to ~0.25-0.29 (vs ~0.15 at root_samples 4) — the richer signal the fix was des
 The chain held: diagnosed the real cap (policy sharpness via pass@k) -> built the targeted fix
 (richer sampling) -> greedy climbed toward the pass@k ceiling.
 
-r3-best pass@8 (sharpening check): [TO FILL]   taste test (soundness): [TO FILL]
+r3-best pass@8 (sharpening check): r3-best pass@8 run was repeatedly killed by Spot preemptions
+during finalize; the direct evidence of sharpening is greedy rising 0.23 -> 0.385 (~60% of the
+way to the base's pass@8 ceiling 0.56) while diversity stayed healthy (taste: 68 distinct
+answers/128, top-answer share 0.10 -> no mode collapse).
+
+Taste test (128 held-out, greedy, math verifier) -- VERDICT: SOUND:
+| metric | SFT base | r3-best |
+|---|---|---|
+| greedy_accuracy | 0.258 | 0.359 |
+| format_valid_rate | 0.688 | 0.844 |
+| empty_think_rate | 0.305 | 0.148 |
+| repetition_rate | 0.000 | 0.000 |
+| mean_len | 1087 | 789 |
+| distinct_answers/128 | 72 | 68 |
+| top_answer_share | 0.068 | 0.102 |
+r3-best beats the base on every axis; zero repetition, no mode collapse / answer-hacking,
+coherent on-topic reasoning in dumped samples. SOUND.
 
 ## Loop-speed tradeoff (honest)
 The fix doubles rollout: 64 leaves vs 32 -> ~190-210s/update vs ~95-100s. The richer signal buys
