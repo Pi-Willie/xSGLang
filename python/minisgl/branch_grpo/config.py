@@ -84,6 +84,24 @@ def main_config() -> BranchGRPOConfig:
     )
 
 
+def round3_config() -> BranchGRPOConfig:
+    # Round 3: the cap is policy sharpness (pass@8 0.56 >> greedy 0.23), not truncation.
+    # Sharpen harder: root_samples 4->8 (64 leaves/prompt) surfaces more correct branches per
+    # prompt => denser leave-one-out advantage to concentrate mass on correct reasoning.
+    return BranchGRPOConfig(
+        name="round3",
+        prompts_per_update=8,
+        rollout_wave_prompts=4,
+        root_samples=8,
+        branch_factor=2,
+        branch_targets=(128, 256, 512),
+        max_generation_tokens=1536,
+        confidence_threshold=0.6,
+        boundary_lookahead=48,
+        lr=2e-6,
+    )
+
+
 def main_v2_config() -> BranchGRPOConfig:
     # v2 bets vs the 0.262 baseline: confidence-gated branching (mandated), longer outputs
     # (max_gen 1024->1536, fewer truncated correct traces), faster climb (lr 1e-6->2e-6).
