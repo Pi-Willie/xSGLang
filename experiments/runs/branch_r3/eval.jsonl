@@ -2,3 +2,4 @@
 {"greedy_accuracy": 0.33203125, "invalid_format_rate": 0.13671875, "repetition_rate": 0.0, "mean_response_length": 778.41796875, "eval_rows": 256.0, "update_id": 20}
 {"greedy_accuracy": 0.37109375, "invalid_format_rate": 0.1171875, "repetition_rate": 0.0, "mean_response_length": 758.55859375, "eval_rows": 256.0, "update_id": 40}
 {"greedy_accuracy": 0.328125, "invalid_format_rate": 0.12109375, "repetition_rate": 0.0, "mean_response_length": 788.54296875, "eval_rows": 256.0, "update_id": 60}
+{"greedy_accuracy": 0.390625, "invalid_format_rate": 0.10546875, "repetition_rate": 0.0, "mean_response_length": 798.0078125, "eval_rows": 256.0, "update_id": 80}
