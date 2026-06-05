@@ -1,0 +1,2 @@
+{"greedy_accuracy": 0.28515625, "invalid_format_rate": 0.1640625, "repetition_rate": 0.0, "mean_response_length": 841.6328125, "eval_rows": 256.0, "update_id": 0}
+{"greedy_accuracy": 0.33203125, "invalid_format_rate": 0.13671875, "repetition_rate": 0.0, "mean_response_length": 778.41796875, "eval_rows": 256.0, "update_id": 20}
