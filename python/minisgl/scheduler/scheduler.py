@@ -512,6 +512,7 @@ class Scheduler(SchedulerIOMixin):
         hook_program: HookProgram | None = None,
         forced_next_tokens: torch.Tensor | None = None,
         sample_next_token: bool = True,
+        request_max_probs: bool = False,
         block_id: int | None = None,
     ) -> StepPlan:
         outputs = self._resolve_output_request(reqs=reqs, requested_outputs=requested_outputs)
@@ -544,6 +545,7 @@ class Scheduler(SchedulerIOMixin):
             topk_k=outputs.topk_k,
             allow_cuda_graph=allow_cuda_graph,
             allow_jit_sampler=allow_jit_sampler,
+            request_max_probs=request_max_probs,
             sample_next_token=sample_next_token,
             forced_next_tokens=forced_next_tokens,
             hook_program=hook_program,
@@ -1013,6 +1015,7 @@ class Scheduler(SchedulerIOMixin):
                     hook_program=block.hook_program,
                     forced_next_tokens=self._resolve_forced_tokens(block, reqs, runnable, step_idx),
                     sample_next_token=True,
+                    request_max_probs=block.branch_confidence_threshold is not None,
                     block_id=block.block_id,
                 )
                 batch = Batch(reqs=list(runnable), phase="decode")

@@ -302,6 +302,7 @@ class StepPlan:
     topk_k: int
     allow_cuda_graph: bool
     allow_jit_sampler: bool
+    request_max_probs: bool = False
     sample_next_token: bool = True
     forced_next_tokens: torch.Tensor | None = None
     hook_program: HookProgram | None = None
@@ -973,6 +974,7 @@ class Batch:
     requested_topk_k: int = field(init=False)
     requested_topk_ids: bool = field(init=False)
     requested_topk_logprobs: bool = field(init=False)
+    requested_max_probs: bool = field(init=False)
     lane: ExecutionLane = field(init=False)
     sample_next_token: bool = field(init=False)
     allow_cuda_graph: bool = field(init=False)
@@ -1018,6 +1020,9 @@ class Batch:
         self.requested_topk_logprobs = any(
             name == OUTPUT_TOPK_LOGPROBS or name.startswith(f"{OUTPUT_TOPK_LOGPROBS}:")
             for name in runtime_output_names
+        )
+        self.requested_max_probs = bool(
+            self.plan is not None and self.plan.request_max_probs
         )
         self.lane = self.plan.lane if self.plan is not None else ExecutionLane.PLAIN
         self.sample_next_token = self.plan.sample_next_token if self.plan is not None else True

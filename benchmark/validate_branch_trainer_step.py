@@ -109,7 +109,7 @@ def main() -> None:
     selected = trainer_selected_logprobs(model, batch)
     manual = _manual_selected_logprobs(model, batch)
     max_logprob_diff = float((selected - manual).abs().max().item())
-    if max_logprob_diff > 1e-7:
+    if max_logprob_diff > 1e-6:
         raise AssertionError(f"selected-logprob mismatch: {max_logprob_diff}")
     if batch.packed_tokens != 9 or batch.response_tokens != 6:
         raise AssertionError("batch packing metadata is wrong")

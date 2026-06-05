@@ -98,12 +98,15 @@ def _open_prompt_tree(llm, prompt_row, prompt_id, config, params):
     return tree, [root, *roots], actives
 
 
-def _record_continuation(llm, tree, ctr, active, cr, prompt_row, config, is_final):
+def _record_continuation(llm, tree, ctr, active, cr, prompt_row, config, is_final, collect_old_logprobs):
     """Record one edge/node, make a leaf or fork; returns [(child_continuation, ActivePath), ...]."""
-    if cr.logprobs is None:
+    if collect_old_logprobs and cr.logprobs is None:
         raise RuntimeError("xsglang did not return selected-token logprobs")
     tokens = np.asarray(cr.emitted_token_ids.tolist(), dtype=np.int32)
-    old_logprobs = np.asarray(cr.logprobs.tolist(), dtype=np.float32)
+    if collect_old_logprobs:
+        old_logprobs = np.asarray(cr.logprobs.tolist(), dtype=np.float32)
+    else:
+        old_logprobs = np.zeros(tokens.shape, dtype=np.float32)
     if tokens.shape != old_logprobs.shape:
         raise ValueError("emitted tokens and logprobs are not aligned")
     end_gen_pos = active.generated_len + int(tokens.shape[0])
@@ -190,6 +193,7 @@ def build_branch_rollout_wave(
     config: BranchGRPOConfig,
     start_prompt_id: int = 0,
     sampling_params: SamplingParams | None = None,
+    collect_old_logprobs: bool = True,
 ) -> List[RolloutTree]:
     """Build several prompt trees jointly, batching one run_block over the whole wave per stage.
 
@@ -219,18 +223,25 @@ def build_branch_rollout_wave(
             if not frontier:
                 break
             cont_ids = tuple(a.continuation.continuation_id for (_, a) in frontier)
+            request_outputs = (OUTPUT_TOKENS, OUTPUT_LOGPROBS) if collect_old_logprobs else (OUTPUT_TOKENS,)
             if is_final:
                 max_new = max(1, config.max_generation_tokens - max(a.generated_len for (_, a) in frontier))
                 block = BlockSpec(
                     continuation_ids=cont_ids, max_new_tokens=max_new, stop_on_eos=True,
-                    request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
+                    request_outputs=request_outputs,
                 )
             else:
+                confidence_threshold = config.confidence_threshold
+                max_new = int(seg_len)
+                if confidence_threshold is not None:
+                    max_new += int(config.boundary_lookahead)
                 block = BlockSpec(
-                    continuation_ids=cont_ids, max_new_tokens=seg_len + int(config.boundary_lookahead),
-                    min_new_tokens=seg_len, stop_on_eos=True,
-                    branch_confidence_threshold=float(config.confidence_threshold),
-                    request_outputs=(OUTPUT_TOKENS, OUTPUT_LOGPROBS),
+                    continuation_ids=cont_ids, max_new_tokens=max_new,
+                    min_new_tokens=int(seg_len), stop_on_eos=True,
+                    branch_confidence_threshold=(
+                        None if confidence_threshold is None else float(confidence_threshold)
+                    ),
+                    request_outputs=request_outputs,
                 )
             result = llm.run_block(block)
             by = {item.continuation_id: item for item in result.continuation_results}
@@ -238,7 +249,8 @@ def build_branch_rollout_wave(
             for ti, active in frontier:
                 cr = by[active.continuation.continuation_id]
                 for child_cont, child_active in _record_continuation(
-                    llm, trees[ti], ctrs[ti], active, cr, rows[ti], config, is_final
+                    llm, trees[ti], ctrs[ti], active, cr, rows[ti], config, is_final,
+                    collect_old_logprobs,
                 ):
                     all_conts.append(child_cont)
                     nxt.append((ti, child_active))
@@ -265,10 +277,12 @@ def build_branch_rollout_tree(
     prompt_id: int,
     config: BranchGRPOConfig,
     sampling_params: SamplingParams | None = None,
+    collect_old_logprobs: bool = True,
 ) -> RolloutTree:
     trees = build_branch_rollout_wave(
         llm=llm, prompt_rows=[prompt_row], config=config,
         start_prompt_id=prompt_id, sampling_params=sampling_params,
+        collect_old_logprobs=collect_old_logprobs,
     )
     if not trees:
         raise ValueError(f"prompt {prompt_id} could not be rolled out (skipped)")
@@ -281,7 +295,9 @@ def build_branch_rollout_trees(
     prompt_rows: Iterable[dict[str, Any]],
     config: BranchGRPOConfig,
     start_prompt_id: int = 0,
+    collect_old_logprobs: bool = True,
 ) -> List[RolloutTree]:
     return build_branch_rollout_wave(
-        llm=llm, prompt_rows=list(prompt_rows), config=config, start_prompt_id=start_prompt_id
+        llm=llm, prompt_rows=list(prompt_rows), config=config, start_prompt_id=start_prompt_id,
+        collect_old_logprobs=collect_old_logprobs,
     )

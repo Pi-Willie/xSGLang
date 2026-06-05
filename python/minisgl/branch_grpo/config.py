@@ -14,8 +14,8 @@ class BranchGRPOConfig:
     branch_targets: Tuple[int, ...]
     max_generation_tokens: int
     prompt_max_tokens: int = 512
-    boundary_lookahead: int = 48  # max tokens to defer a fork past the nominal segment length
-    confidence_threshold: float = 0.6  # fork only where top-1 prob <= this (low-confidence)
+    boundary_lookahead: int = 0
+    confidence_threshold: float | None = None
     temperature: float = 1.0
     top_p: float = 1.0
     ppo_clip: float = 0.2
@@ -42,6 +42,10 @@ class BranchGRPOConfig:
             raise ValueError("branch_targets must be sorted")
         if any(target <= 0 or target >= self.max_generation_tokens for target in self.branch_targets):
             raise ValueError("branch targets must be inside the generation window")
+        if self.boundary_lookahead < 0:
+            raise ValueError("boundary_lookahead must be non-negative")
+        if self.confidence_threshold is not None and not (0.0 < self.confidence_threshold <= 1.0):
+            raise ValueError("confidence_threshold must be in (0, 1] or None")
 
     @property
     def waves_per_update(self) -> int:
@@ -58,6 +62,23 @@ class BranchGRPOConfig:
     @property
     def max_active_continuations_per_wave(self) -> int:
         return self.rollout_wave_prompts * self.leaves_per_prompt
+
+    @property
+    def retained_continuation_slots_per_prompt(self) -> int:
+        """Continuation-table slots held while building one full prompt tree.
+
+        xsglang forks keep parent continuations alive until the whole tree is freed. The table
+        therefore needs room for the prompt root plus every retained branch continuation, not
+        just the final active leaf frontier.
+        """
+        branch_levels = sum(
+            self.branch_factor**level for level in range(len(self.branch_targets) + 1)
+        )
+        return 1 + self.root_samples * branch_levels
+
+    @property
+    def retained_continuation_slots_per_wave(self) -> int:
+        return self.rollout_wave_prompts * self.retained_continuation_slots_per_prompt
 
 
 def smoke_config() -> BranchGRPOConfig:
@@ -81,6 +102,43 @@ def main_config() -> BranchGRPOConfig:
         branch_factor=2,
         branch_targets=(128, 256, 512),
         max_generation_tokens=1024,
+    )
+
+
+def fixed128_config() -> BranchGRPOConfig:
+    # Current clean default: iid stochastic forks at fixed token intervals. The r3-best model's
+    # typical completion length is around 1040 tokens, so five evenly spaced fork points turn
+    # 4 root samples into a nominal 128 leaves right around that natural stopping length.
+    interval = 208
+    branch_count = 5
+    return BranchGRPOConfig(
+        name="fixed128",
+        prompts_per_update=8,
+        rollout_wave_prompts=4,
+        root_samples=4,
+        branch_factor=2,
+        branch_targets=tuple(interval * (idx + 1) for idx in range(branch_count)),
+        max_generation_tokens=1536,
+        boundary_lookahead=0,
+        confidence_threshold=None,
+        lr=2e-6,
+    )
+
+
+def bigmath128_config() -> BranchGRPOConfig:
+    interval = 208
+    branch_count = 5
+    return BranchGRPOConfig(
+        name="bigmath128",
+        prompts_per_update=8,
+        rollout_wave_prompts=2,
+        root_samples=4,
+        branch_factor=2,
+        branch_targets=tuple(interval * (idx + 1) for idx in range(branch_count)),
+        max_generation_tokens=1536,
+        boundary_lookahead=0,
+        confidence_threshold=None,
+        lr=5e-6,
     )
 
 

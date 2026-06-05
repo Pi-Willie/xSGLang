@@ -141,6 +141,44 @@ def _normalize_openr1_row(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _normalize_big_math_row(
+    row: dict[str, Any],
+    *,
+    min_llama8b_solve_rate: float = 0.1,
+) -> dict[str, Any] | None:
+    problem = _pick_field(row, ("problem", "question", "prompt"))
+    answer = _pick_field(row, ("answer", "final_answer", "target", "solution"))
+    solve_rate = row.get("llama8b_solve_rate")
+    if problem is None or answer is None or solve_rate is None:
+        return None
+    try:
+        solve_rate_f = float(solve_rate)
+    except (TypeError, ValueError):
+        return None
+    if solve_rate_f <= float(min_llama8b_solve_rate):
+        return None
+    problem_text = str(problem).strip()
+    normalized = normalize_answer(answer)
+    if not problem_text or not keep_short_answer(normalized):
+        return None
+    return {
+        "problem": problem_text,
+        "answer": str(answer).strip(),
+        "normalized_answer": normalized,
+        "llama8b_solve_rate": solve_rate_f,
+        "source": row.get("source"),
+        "domain": row.get("domain"),
+        "prompt_template": PROMPT_TEMPLATE_VERSION,
+        "prompt": format_prompt(problem_text),
+    }
+
+
+def _dataset_stream(dataset_name: str, split: str) -> Iterable[dict[str, Any]]:
+    from datasets import load_dataset
+
+    yield from load_dataset(dataset_name, split=split, streaming=True)
+
+
 def prepare_openr1(
     *,
     dataset_name: str,
@@ -202,9 +240,7 @@ def prepare_openr1(
 
 
 def _openr1_stream(dataset_name: str, split: str) -> Iterable[dict[str, Any]]:
-    from datasets import load_dataset
-
-    yield from load_dataset(dataset_name, split=split, streaming=True)
+    yield from _dataset_stream(dataset_name, split)
 
 
 def iter_openr1_train_rows(
@@ -229,6 +265,130 @@ def iter_openr1_train_rows(
         if normalized["split_key"] in heldout_keys:
             continue
         yield normalized
+
+
+def iter_big_math_rows(
+    *,
+    dataset_name: str = "SynthLabsAI/Big-Math-RL-Verified",
+    split: str = "train",
+    min_llama8b_solve_rate: float = 0.1,
+    seed: int = 20260605,
+    source_path: Path | None = None,
+) -> Iterable[dict[str, Any]]:
+    rows: Iterable[dict[str, Any]]
+    if source_path is not None:
+        rows = _read_jsonl(source_path)
+    else:
+        rows = _dataset_stream(dataset_name, split)
+    for row in rows:
+        if source_path is not None:
+            normalized = dict(row)
+        else:
+            normalized = _normalize_big_math_row(
+                row,
+                min_llama8b_solve_rate=min_llama8b_solve_rate,
+            )
+            if normalized is None:
+                continue
+        if "split_key" not in normalized:
+            normalized["split_key"] = _stable_key(
+                normalized.get("problem", ""),
+                normalized.get("normalized_answer", ""),
+                seed=seed,
+            )
+        yield normalized
+
+
+def prepare_big_math(
+    *,
+    dataset_name: str,
+    split: str,
+    output_dir: Path,
+    seed: int,
+    min_llama8b_solve_rate: float,
+    max_rows: int,
+) -> dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "big_math_filtered.jsonl"
+    summary_path = output_dir / "big_math_summary.json"
+    scanned = 0
+    kept = 0
+    skipped_missing = 0
+    skipped_short_answer = 0
+    skipped_solve_rate = 0
+    inspected_schema = None
+    first_row = None
+    with output_path.open("w", encoding="utf-8") as f:
+        for row in _dataset_stream(dataset_name, split):
+            scanned += 1
+            if inspected_schema is None:
+                inspected_schema = {key: type(value).__name__ for key, value in row.items()}
+
+            problem = _pick_field(row, ("problem", "question", "prompt"))
+            answer = _pick_field(row, ("answer", "final_answer", "target", "solution"))
+            solve_rate = row.get("llama8b_solve_rate")
+            if problem is None or answer is None or solve_rate is None:
+                skipped_missing += 1
+                if max_rows and scanned >= max_rows:
+                    break
+                continue
+            try:
+                solve_rate_f = float(solve_rate)
+            except (TypeError, ValueError):
+                skipped_missing += 1
+                if max_rows and scanned >= max_rows:
+                    break
+                continue
+            if solve_rate_f <= float(min_llama8b_solve_rate):
+                skipped_solve_rate += 1
+                if max_rows and scanned >= max_rows:
+                    break
+                continue
+            normalized_answer = normalize_answer(answer)
+            if not str(problem).strip() or not keep_short_answer(normalized_answer):
+                skipped_short_answer += 1
+                if max_rows and scanned >= max_rows:
+                    break
+                continue
+            item = {
+                "id": f"big-math-{kept}",
+                "split_key": _stable_key(problem, normalized_answer, seed=seed),
+                "problem": str(problem).strip(),
+                "answer": str(answer).strip(),
+                "normalized_answer": normalized_answer,
+                "llama8b_solve_rate": solve_rate_f,
+                "source": row.get("source"),
+                "domain": row.get("domain"),
+                "prompt_template": PROMPT_TEMPLATE_VERSION,
+                "prompt": format_prompt(str(problem).strip()),
+            }
+            if first_row is None:
+                first_row = item
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            kept += 1
+            if max_rows and scanned >= max_rows:
+                break
+
+    summary = {
+        "dataset": dataset_name,
+        "split": split,
+        "mode": "materialized_filtered_train_pool",
+        "prompt_template": PROMPT_TEMPLATE_VERSION,
+        "seed": seed,
+        "min_llama8b_solve_rate": min_llama8b_solve_rate,
+        "max_rows": max_rows,
+        "scanned_rows": scanned,
+        "kept_rows": kept,
+        "skipped_missing_or_invalid_fields": skipped_missing,
+        "skipped_solve_rate": skipped_solve_rate,
+        "skipped_answer_filter": skipped_short_answer,
+        "schema": inspected_schema,
+        "output_path": str(output_path),
+        "summary_path": str(summary_path),
+        "first_row": first_row,
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    return summary
 
 
 def prepare_openr1_heldout(
@@ -337,6 +497,15 @@ def build_parser() -> argparse.ArgumentParser:
     heldout.add_argument("--seed", type=int, default=20260603)
     heldout.add_argument("--max-rows", type=int, default=0)
     heldout.add_argument("--force-exit", action="store_true")
+
+    big_math = sub.add_parser("big-math")
+    big_math.add_argument("--dataset", default="SynthLabsAI/Big-Math-RL-Verified")
+    big_math.add_argument("--split", default="train")
+    big_math.add_argument("--output-dir", type=Path, required=True)
+    big_math.add_argument("--seed", type=int, default=20260605)
+    big_math.add_argument("--min-llama8b-solve-rate", type=float, default=0.1)
+    big_math.add_argument("--max-rows", type=int, default=0)
+    big_math.add_argument("--force-exit", action="store_true")
     return parser
 
 
@@ -370,6 +539,15 @@ def main() -> None:
             output_dir=args.output_dir,
             eval_size=args.eval_size,
             seed=args.seed,
+            max_rows=args.max_rows,
+        )
+    elif args.cmd == "big-math":
+        summary = prepare_big_math(
+            dataset_name=args.dataset,
+            split=args.split,
+            output_dir=args.output_dir,
+            seed=args.seed,
+            min_llama8b_solve_rate=args.min_llama8b_solve_rate,
             max_rows=args.max_rows,
         )
     else:

@@ -662,3 +662,44 @@ richer per-prompt sampling (root_samples 4->8 => 64 leaves/prompt, more correct 
 surfaced => denser advantage) + continue training -> convert pass@k headroom into greedy@1.
 Target: push greedy from 0.31 toward the ~0.56 pass@8 ceiling. Truncation stays handled (max_gen
 1536; long correct traces survive) but is not the lever.
+
+## 2026-06-05 - Big-Math Branch-Dr.GRPO optimization pass
+
+User theory update accepted: no confidence-gated fork points. Branching is now fixed-interval
+iid continuation: start with 4 stochastic roots, fork every 208 generated tokens, five fork
+points total (208/416/624/832/1040), branch_factor=2, nominal 128 leaves/prompt, max_gen=1536.
+This avoids the bad "force a different token" idea and also avoids confidence heuristics on
+fragile math tokens; each fork is just a fresh stochastic continuation from the same prefix.
+
+Dataset built from SynthLabsAI/Big-Math-RL-Verified with the prior concise-answer filter plus
+llama8b_solve_rate > 0.1:
+- scanned 251,122 rows; kept 135,397
+- skipped 4 invalid/missing, 68,869 by solve-rate, 46,852 by answer filter
+- local/remote SHA256 verified for the 113MB JSONL.
+
+Code cleanup/perf changes:
+- on-policy old_logprobs: do not ask xsglang for rollout logprobs; trainer sets old=current.detach()
+  for the single PPO epoch, so rho=1 exactly and we skip a full decode-side logprob path.
+- trainer logprobs use logits_to_keep when available plus target_logit - logsumexp, avoiding
+  prompt-prefix logits and an extra full log_softmax materialization.
+- collate uses numpy vector buffers; train examples are length-bucketed after shuffle to reduce
+  padding; leaf paths are unique with repeat_weight, not duplicated per nominal slot.
+- fixed branch stages generate exactly the segment length when confidence_threshold=None.
+- runner streams Big-Math rows, writes live plot/data in memory, saves per-update outputs and one
+  representative trajectory, and can disable checkpoint writes for smoke tests.
+- xsglang request-table sizing now accounts for retained fork trees. 128-leaf wave rollout needs
+  retained tree slots, not just the final frontier; max_running_req=256 failed with "No free table
+  slots left for fork", max_running_req=768 is stable.
+
+H100 smoke results from SFT base:
+- memory_ratio=0.35/max_running_req=256: KV/table pressure, skipped prompts.
+- memory_ratio=0.55/max_running_req=256: KV fixed but table slots still failed.
+- memory_ratio=0.55/max_running_req=768/max_packed_tokens=2048: full intended update, skipped=0,
+  nominal slots=1024, rollout 41.5s, train 49.5s, peak 65GB.
+- max_packed_tokens=4096 OOM in backward; 3072 fit only with lower KV but did not improve train
+  time (~49.8s) and peaked 71.5GB. Real run uses 2048 for stability.
+
+Launched `experiments/runs/big_math_branch_drgrpo_v1` for 60 updates:
+`bigmath128`, lr=5e-6, no eval loop, checkpoint_every=10, best_metric=accuracy_per_verifier_call,
+memory_ratio=0.55, max_running_req=768, max_packed_tokens=2048.
+Early updates: u0 acc_vc=0.515, u1=0.477, u2=0.750; no skipped prompts, finite grads, peak ~65GB.

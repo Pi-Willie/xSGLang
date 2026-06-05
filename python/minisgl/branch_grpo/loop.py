@@ -14,8 +14,10 @@ deviations (on-policy rho==1, CPU-resident optimizer state, prompt-major rollout
 from __future__ import annotations
 
 import gc
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -65,6 +67,7 @@ class BranchGRPOLoop:
         device: torch.device | str = "cuda",
         on_policy_old_logprobs: bool = True,
         use_wave_rollout: bool = False,
+        entropy_sample_tokens: int = 1024,
     ) -> None:
         self.llm = llm
         self.model = trainer_model
@@ -74,6 +77,7 @@ class BranchGRPOLoop:
         self.device = torch.device(device)
         self.on_policy_old_logprobs = on_policy_old_logprobs
         self.use_wave_rollout = use_wave_rollout
+        self.entropy_sample_tokens = int(entropy_sample_tokens)
         self.pad_token_id = int(getattr(llm.tokenizer, "pad_token_id", 0) or 0)
         self.policy_version = 0
 
@@ -155,7 +159,9 @@ class BranchGRPOLoop:
 
     # ---- one update -------------------------------------------------------
     def run_update(self, update_id: int, prompt_rows: list[dict[str, Any]],
-                   *, capture_weight_delta: bool = False) -> UpdateMetrics:
+                   *, capture_weight_delta: bool = False,
+                   trajectory_dir: Path | None = None,
+                   outputs_dir: Path | None = None) -> UpdateMetrics:
         cfg = self.config
         m = UpdateMetrics(update_id=update_id)
         # Persistent-baseline live memory BEFORE any rollout/train transient. This is the
@@ -170,6 +176,10 @@ class BranchGRPOLoop:
         trees: list[RolloutTree] = []
         rollout_gen_tokens = 0
         skipped_prompts = 0
+        row_by_prompt_id = {
+            update_id * 1000 + offset: row
+            for offset, row in enumerate(prompt_rows)
+        }
         if self.use_wave_rollout:
             # Cross-prompt level-major batching: one run_block over each wave's combined frontier
             # (much higher decode concurrency). Over-long prompts are skipped inside the builder.
@@ -180,6 +190,7 @@ class BranchGRPOLoop:
                     wtrees = build_branch_rollout_wave(
                         llm=self.llm, prompt_rows=chunk, config=cfg,
                         start_prompt_id=update_id * 1000 + w0,
+                        collect_old_logprobs=not self.on_policy_old_logprobs,
                     )
                 except Exception as exc:
                     skipped_prompts += len(chunk)
@@ -193,6 +204,7 @@ class BranchGRPOLoop:
                     tree = build_branch_rollout_tree(
                         llm=self.llm, prompt_row=row,
                         prompt_id=update_id * 1000 + offset, config=cfg,
+                        collect_old_logprobs=not self.on_policy_old_logprobs,
                     )
                 except Exception as exc:
                     # Skip an over-long / failed prompt rather than killing the run.
@@ -202,6 +214,12 @@ class BranchGRPOLoop:
                 trees.append(tree)
         rollout_gen_tokens += int(
             sum(int(e.tokens.shape[0]) for tr in trees for e in tr.edges.values())
+        )
+        actual_node_count = int(sum(len(tr.nodes) for tr in trees))
+        actual_edge_count = int(sum(len(tr.edges) for tr in trees))
+        actual_leaf_count = int(sum(len(tr.leaves) for tr in trees))
+        actual_branch_node_count = int(
+            sum(1 for tr in trees for node in tr.nodes.values() if len(node.children) >= 2)
         )
         rollout_s = time.perf_counter() - t0
         m.fields["skipped_prompts"] = float(skipped_prompts)
@@ -230,6 +248,15 @@ class BranchGRPOLoop:
         for tree in trees:
             train_examples.extend(materialize_leaf_slot_paths(tree))
 
+        if trajectory_dir is not None or outputs_dir is not None:
+            _save_update_artifacts(
+                update_id=update_id,
+                trees=trees,
+                row_by_prompt_id=row_by_prompt_id,
+                trajectory_dir=trajectory_dir,
+                outputs_dir=outputs_dir,
+            )
+
         # ---- weight snapshot (optional, for health gate) ----
         pre_snapshot = None
         if capture_weight_delta:
@@ -250,6 +277,7 @@ class BranchGRPOLoop:
             shuffle=True,
             seed=update_id,
             on_policy_old_logprobs=self.on_policy_old_logprobs,
+            entropy_sample_tokens=self.entropy_sample_tokens,
         )
         train_s = time.perf_counter() - t1
 
@@ -274,6 +302,11 @@ class BranchGRPOLoop:
             "reward_mean_unique_leaf": float(np.mean(unique_rewards)) if unique_rewards else 0.0,
             "accuracy_per_verifier_call": float(np.mean([1.0 if r > 0 else 0.0 for r in unique_rewards])) if unique_rewards else 0.0,
             "unique_leaf_count": float(len(unique_rewards)),
+            "actual_tree_count": float(len(trees)),
+            "actual_node_count": float(actual_node_count),
+            "actual_edge_count": float(actual_edge_count),
+            "actual_leaf_count": float(actual_leaf_count),
+            "actual_branch_node_count": float(actual_branch_node_count),
             "nominal_leaf_slots": float(len(all_rewards)),
             "zero_signal_prompt_fraction": zero_signal_prompts / max(1, len(trees)),
             "actual_generated_tree_tokens": float(rollout_gen_tokens),
@@ -287,6 +320,11 @@ class BranchGRPOLoop:
             "approx_kl_old_current": stats.approx_kl_old_current,
             "mean_logratio": stats.mean_logratio,
             "max_abs_logratio": stats.max_abs_logratio,
+            "mean_selected_logprob": stats.mean_selected_logprob,
+            "mean_selected_prob": stats.mean_selected_prob,
+            "mean_token_entropy": stats.mean_token_entropy,
+            "mean_advantage": stats.mean_advantage,
+            "mean_abs_advantage": stats.mean_abs_advantage,
             "nonzero_weighted_tokens": stats.nonzero_weighted_tokens,
             "microbatches": float(stats.microbatches),
             "optimizer_steps": float(stats.optimizer_steps),
@@ -388,3 +426,83 @@ def _has_repetition(tokens: list[int], run: int = 200) -> bool:
         else:
             count = 1
     return False
+
+
+def _save_update_artifacts(
+    *,
+    update_id: int,
+    trees: list[RolloutTree],
+    row_by_prompt_id: dict[int, dict[str, Any]],
+    trajectory_dir: Path | None,
+    outputs_dir: Path | None,
+) -> None:
+    if outputs_dir is not None:
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        output_path = outputs_dir / f"update_{update_id:06d}.jsonl"
+        with output_path.open("w", encoding="utf-8") as f:
+            for tree in trees:
+                row = row_by_prompt_id.get(tree.prompt_id, {})
+                for leaf in sorted(tree.leaves.values(), key=lambda item: item.id):
+                    extracted = extract_answer_tag(leaf.answer_text)
+                    f.write(json.dumps({
+                        "update_id": update_id,
+                        "prompt_id": tree.prompt_id,
+                        "leaf_id": leaf.id,
+                        "reward": leaf.reward,
+                        "nominal_slot_count": leaf.nominal_slot_count,
+                        "finish_reason": leaf.finish_reason,
+                        "problem": row.get("problem"),
+                        "answer": row.get("answer"),
+                        "normalized_answer": row.get("normalized_answer"),
+                        "pred_answer": extracted,
+                        "normalized_pred": normalize_answer(extracted),
+                        "response_text": leaf.answer_text,
+                    }, ensure_ascii=False) + "\n")
+
+    if trajectory_dir is None:
+        return
+    trajectory_dir.mkdir(parents=True, exist_ok=True)
+    chosen_tree: RolloutTree | None = None
+    chosen_leaf: Any | None = None
+    for tree in trees:
+        leaves = sorted(tree.leaves.values(), key=lambda item: (-float(item.reward), item.id))
+        if not leaves:
+            continue
+        if chosen_leaf is None or leaves[0].reward > chosen_leaf.reward:
+            chosen_tree, chosen_leaf = tree, leaves[0]
+    if chosen_tree is None or chosen_leaf is None:
+        return
+    row = row_by_prompt_id.get(chosen_tree.prompt_id, {})
+    edges = [chosen_tree.edges[eid] for eid in chosen_leaf.path_edges]
+    extracted = extract_answer_tag(chosen_leaf.answer_text)
+    payload = {
+        "update_id": update_id,
+        "prompt_id": chosen_tree.prompt_id,
+        "leaf_id": chosen_leaf.id,
+        "selection": "highest_reward_then_first_leaf",
+        "reward": chosen_leaf.reward,
+        "problem": row.get("problem"),
+        "answer": row.get("answer"),
+        "normalized_answer": row.get("normalized_answer"),
+        "pred_answer": extracted,
+        "normalized_pred": normalize_answer(extracted),
+        "finish_reason": chosen_leaf.finish_reason,
+        "response_text": chosen_leaf.answer_text,
+        "path": [
+            {
+                "edge_id": edge.id,
+                "depth": edge.depth,
+                "start_gen_pos": edge.start_gen_pos,
+                "end_gen_pos": edge.end_gen_pos,
+                "token_count": int(edge.tokens.shape[0]),
+                "nominal_weight": edge.nominal_weight,
+                "advantage": edge.advantage,
+                "finish_reason": edge.finish_reason,
+            }
+            for edge in edges
+        ],
+    }
+    (trajectory_dir / f"update_{update_id:06d}.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )

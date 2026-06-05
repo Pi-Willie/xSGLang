@@ -414,11 +414,15 @@ class Engine:
         topk_ids_cpu = None
         topk_logprobs_cpu = None
         logprobs_cpu = None
+        max_prob_cpu = None
         active_logits = logits[: batch.size]
         active_logprobs = None
+        active_logits_f = None
+        log_z = None
         if batch.requested_topk_k > 0:
             if batch.requested_topk_logprobs:
-                active_logprobs = torch.log_softmax(active_logits.float(), dim=-1)
+                active_logits_f = active_logits.float()
+                active_logprobs = torch.log_softmax(active_logits_f, dim=-1)
                 topk_logprobs, topk_ids = torch.topk(
                     active_logprobs,
                     k=batch.requested_topk_k,
@@ -437,20 +441,34 @@ class Engine:
                 req.complete_one()
             next_tokens_gpu = self.sampler.sample(active_logits, args).to(torch.int32)
             if batch.requested_logprobs:
+                if active_logits_f is None:
+                    active_logits_f = active_logits.float()
                 if active_logprobs is None:
-                    active_logprobs = torch.log_softmax(active_logits.float(), dim=-1)
+                    log_z = torch.logsumexp(active_logits_f, dim=-1)
                 selected = next_tokens_gpu.to(torch.long).view(-1, 1)
-                logprobs_cpu = active_logprobs.gather(dim=-1, index=selected).view(-1).to(
+                if active_logprobs is not None:
+                    selected_logprobs = active_logprobs.gather(dim=-1, index=selected).view(-1)
+                else:
+                    target_logits = active_logits_f.gather(dim=-1, index=selected).view(-1)
+                    selected_logprobs = target_logits - log_z
+                logprobs_cpu = selected_logprobs.to(
                     "cpu",
                     non_blocking=True,
                 )
             next_tokens_cpu = next_tokens_gpu.to("cpu", non_blocking=True)
-        # Top-1 token probability (confidence) per sequence: a free batched max-reduction over
-        # the log_softmax already computed for logprobs. Used by confidence-gated branching to
-        # fork only at low-confidence positions. No extra forward, no per-token Python.
-        max_prob_cpu = None
-        if batch.sample_next_token and active_logprobs is not None:
-            max_prob_cpu = active_logprobs.max(dim=-1).values.exp().to("cpu", non_blocking=True)
+        # Top-1 token probability for confidence-gated branching. Do not materialize a full
+        # [batch, vocab] log_softmax just to compare max_prob <= threshold; max-logsumexp is
+        # the same value with one reduction and much less memory bandwidth.
+        if batch.sample_next_token and batch.requested_max_probs:
+            if active_logits_f is None:
+                active_logits_f = active_logits.float()
+            if active_logprobs is not None:
+                max_prob = active_logprobs.max(dim=-1).values.exp()
+            else:
+                if log_z is None:
+                    log_z = torch.logsumexp(active_logits_f, dim=-1)
+                max_prob = (active_logits_f.max(dim=-1).values - log_z).exp()
+            max_prob_cpu = max_prob.to("cpu", non_blocking=True)
         elif batch.is_prefill:
             # Prefill-only blocks warm the KV cache without consuming the first decode slot.
             for req in batch.reqs:
