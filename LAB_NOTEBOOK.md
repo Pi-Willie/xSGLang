@@ -639,3 +639,26 @@ DELIVERED (round 2):
 - 0.5 not reached; honest assessment in RESULTS_SUMMARY (4B/benchmark/compute ceiling).
 
 Shutting down H100 (all training stopped, watchers stopped, artifacts local).
+
+## 2026-06-05 - ROUND 3 DISCOVERY: the cap is policy sharpness, not truncation
+
+Diagnosed v2-best (the 0.309 model) with greedy budget curve + pass@k + failure breakdown:
+- greedy@1536 acc 0.289 -> greedy@2560 acc 0.305 (N=128): budget +67% gives +0.016, WITHIN the
+  noise band (2σ≈0.08 at N=128). Truncation is NOT the accuracy cap. It only lifts FORMAT
+  validity (0.84->0.93); the un-truncated long traces mostly resolve to WRONG answers
+  (wrong_answer 70->80). => the truncation lead is a red herring for correctness.
+- Failure breakdown of wrong greedy traces @1536: wrong_answer 70 (dominant), truncated 21,
+  stopped 0, degenerate 0. The model mostly reasons to a WRONG answer.
+- pass@8 = 0.5625 vs greedy@1 = 0.229 (same 96-prompt subset; avg single temp-1 sample also
+  0.229). THE MODEL SOLVES 56% WITHIN 8 SAMPLES but greedy only gets 23% -> a 2.4x
+  decoding/policy-sharpness gap. Correct reasoning IS in the model's distribution; greedy picks
+  a wrong path. Samples are correlated (pass@8 0.56 << independent 0.88), so the model makes
+  systematic errors, but the headroom is large and real.
+
+CONCLUSION: the cap is POLICY SHARPNESS, not truncation and not raw capability. This is exactly
+what Branch-GRPO concentrates mass for. v2 plateaued at 0.31 because it didn't sharpen enough /
+surfaced too few correct branches per prompt (root_samples 4). FIX (round 3): sharpen harder --
+richer per-prompt sampling (root_samples 4->8 => 64 leaves/prompt, more correct branches
+surfaced => denser advantage) + continue training -> convert pass@k headroom into greedy@1.
+Target: push greedy from 0.31 toward the ~0.56 pass@8 ceiling. Truncation stays handled (max_gen
+1536; long correct traces survive) but is not the lever.
