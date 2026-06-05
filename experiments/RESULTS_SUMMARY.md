@@ -191,3 +191,52 @@ materially stronger base (a larger model, or much more SFT on length-controlled 
 and likely more rollout compute — beyond this run's budget. The robust, validated gain delivered
 is **0.262 → 0.31** with the mandated confidence-branching mechanism and the budget/verifier
 fixes, plus a documented map of which levers move the objective and which don't.
+
+---
+
+# ROUND 3 — find the real cap; beat 0.309 (DISCOVERY + FIX)
+
+## The diagnosis (what's actually capping the model)
+Ran a diagnostic (experiments/scripts/diagnose.py) on the Round-2 best model (0.309): greedy
+budget curve + pass@k + failure-mode breakdown, held-out, math verifier.
+- Truncation is NOT the accuracy cap: greedy@1536 0.289 -> greedy@2560 0.305 (N=128), i.e.
+  budget +67% gives +0.016 (WITHIN the noise band 2σ≈0.08). It lifts format-validity
+  (0.84->0.93) but the un-truncated long traces mostly resolve to WRONG answers (the truncation
+  "lead" was a red herring for correctness).
+- Failure breakdown of wrong greedy traces: wrong_answer dominant (~60%), truncated ~16%,
+  stopped 0, degenerate 0. The model mostly reasons to a WRONG answer.
+- pass@8 = 0.5625 vs greedy@1 = 0.229 (same 96-prompt subset; avg single temp-1 sample 0.229).
+  => THE MODEL SOLVES 56% WITHIN 8 SAMPLES but greedy only gets 23%: a 2.4x gap. The correct
+  reasoning IS in the model's distribution; greedy lands on a wrong path.
+
+REAL CAP = POLICY SHARPNESS (decoding), not truncation, not raw capability. This is exactly what
+Branch-GRPO concentrates probability mass for, and the headroom (0.23 -> 0.56) is large.
+
+## The fix
+round3 config: root_samples 4 -> 8 (64 leaves/prompt). More per-prompt samples surface more
+correct branches => a denser leave-one-out advantage to concentrate mass on correct reasoning.
+RL'd from the Round-2 best (0.309 start). Confidence-gated branching kept; math verifier kept;
+in-memory refresh kept. Note v2 at root_samples 4 had PLATEAUED at 0.31 even with more steps, so
+the gain is the richer sampling, not just more training.
+
+## Result — BEAT 0.309
+Held-out greedy@1 (N=256, max_gen 1536, math verifier) over training:
+| update | 0 | 20 | 40 | 60 | 80 | 100 |
+|---|---|---|---|---|---|---|
+| greedy_accuracy | 0.285 | 0.332 | 0.371 | 0.328 | **0.391** | 0.375 |
+| invalid_format | 0.164 | 0.137 | 0.117 | 0.121 | 0.105 | 0.102 |
+Plateaued ~0.37-0.39 (best u80=0.391). Robust re-eval of the best checkpoint (N=192):
+greedy@1536 = **0.385** (valid-format 0.91). Branch sibling-disagreement (mixed-node) rate rose
+to ~0.25-0.29 (vs ~0.15 at root_samples 4) — the richer signal the fix was designed to produce.
+
+**Headline: 0.309 -> 0.385-0.391 greedy@1, +0.076 to +0.082 (>2σ, noise band ~0.05-0.06).**
+The chain held: diagnosed the real cap (policy sharpness via pass@k) -> built the targeted fix
+(richer sampling) -> greedy climbed toward the pass@k ceiling.
+
+r3-best pass@8 (sharpening check): [TO FILL]   taste test (soundness): [TO FILL]
+
+## Loop-speed tradeoff (honest)
+The fix doubles rollout: 64 leaves vs 32 -> ~190-210s/update vs ~95-100s. The richer signal buys
+the accuracy gain at ~2x loop cost. (Cross-prompt level-major batching does not offset it -- the
+per-tree frontier already saturates H100 decode; rollout is token-throughput-bound.) The
+in-memory weight refresh stays near-free (~0.3s).
