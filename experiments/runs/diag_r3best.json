@@ -1,0 +1,19 @@
+{
+  "label": "r3best",
+  "model": "experiments/runs/branch_r3/best_model",
+  "n": 192,
+  "greedy@1536": {
+    "acc": 0.3854,
+    "valid_fmt": 0.9115,
+    "mean_len": 775.5,
+    "frac_at_cap": 0.089,
+    "wrong_breakdown": {
+      "truncated_no_answer": 17,
+      "stopped_no_answer": 0,
+      "wrong_answer": 101,
+      "degenerate": 0
+    }
+  },
+  "pass@8": 0.6354,
+  "avg_sample_acc": 0.3145
+}
